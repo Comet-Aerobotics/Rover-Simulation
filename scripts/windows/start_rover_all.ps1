@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidateSet('Diagnostics', 'Start')]
-    [string]$Mode = 'Diagnostics'
+    [string]$Mode = 'Start'
 )
 
 $ErrorActionPreference = 'Stop'

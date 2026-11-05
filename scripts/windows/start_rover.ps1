@@ -42,7 +42,7 @@ if($targetExit -eq 0){
 } else{Write-Host "Target container '$container' is not present on WSL Docker."}
 $legacyNodes=@()
 if($oldExit -eq 0 -and $oldState -eq 'running'){
-  $legacyNodes=@(& wsl.exe -d $distro --exec bash -lc 'docker exec cometbot_dev bash -lc "source /opt/ros/humble/setup.bash; ros2 node list 2>/dev/null"')
+  $legacyNodes=@(& wsl.exe -d $distro --exec docker exec cometbot_dev bash -lc 'source /opt/ros/humble/setup.bash && ros2 node list 2>/dev/null')
   if($LASTEXITCODE -ne 0){throw 'Could not verify legacy ROS nodes; refusing to launch duplicate services.'}
   Write-Host "Legacy cometbot_dev nodes: $($legacyNodes -join ', ')"
 }
