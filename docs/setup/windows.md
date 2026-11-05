@@ -6,6 +6,6 @@
 4. Isaac Sim 6.1's `setup_ros_env.bat` defaults to Jazzy/Zenoh. The supported launch sets `ROS_DISTRO=jazzy`, `RMW_IMPLEMENTATION=rmw_fastrtps_cpp`, `ROS_DOMAIN_ID=0`, and clears stale DDS profile overrides before launching Isaac. Confirm the ROS 2 Bridge extension loads successfully before expecting discovery.
 5. Run `scripts/windows/start_rover.ps1 -Mode Diagnostics`. If legacy teleop nodes are active in `cometbot_dev`, stop only their processes with `scripts/windows/stop_rover.ps1 -Container cometbot_dev`, verify they exit, then run `scripts/windows/start_rover.ps1 -Mode Start`.
 
-Start mode opens WSL and ROS terminals, builds/starts the separate `aiaa_rover_dev`, runs node/topic checks, and launches the selected local-Jackal scene if Isaac Sim is not already open. The original baseline USD is preserved. The script never closes the legacy container or saves/terminates an already-open Isaac stage.
+Start mode opens WSL and ROS terminals, builds/starts the separate `aiaa_rover_dev`, runs node/topic checks, and launches the canonical local-Jackal scene if Isaac Sim is not already open. The script never closes the legacy container or saves/terminates an already-open Isaac stage.
 
 Cross-host DDS discovery is not yet validated. Avoid changing firewall, router, or multicast settings based only on the existing topic list; capture diagnostics first. See [troubleshooting](../troubleshooting.md).

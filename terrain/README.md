@@ -1,10 +1,11 @@
 # terrain/
 
-Offline terrain tools for generating a mesh from source DEM data, repairing collision properties on a separate stage copy, and validating terrain structure.
+Terrain tools for generating terrain data, building a corrected scene candidate on a separate stage copy, repairing collision properties on another copy, and validating terrain structure.
 
 ## Contents
 
 - __pycache__/
+- build_scene_candidate.py
 - generate.py
 - processed/
 - repair.py

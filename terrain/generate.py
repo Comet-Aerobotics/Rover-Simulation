@@ -1,4 +1,4 @@
-"""Reproducibly process the Lunalab lidar01 DEM using the original loader's rules.
+"""Process the Lunalab lidar01 DEM with axes aligned to the configured grid.
 
 This is an offline asset generator. It never opens or edits an Isaac Sim stage.
 """
@@ -81,6 +81,12 @@ def generate(config: dict[str, Any], output: Path | None = None,
     height = round(float(config["length_m"])/resolution)
     original = np.load(dem_path, allow_pickle=False)
     raw_mask = np.load(mask_path, allow_pickle=False) if mask_path.exists() else np.ones_like(original, dtype=np.uint8)
+    input_policy = config.get("input_policy", "top_left_crop_zero_pad")
+    if input_policy == "transpose_then_crop_zero_pad":
+        original = original.T
+        raw_mask = raw_mask.T
+    elif input_policy != "top_left_crop_zero_pad":
+        raise ValueError(f"Unsupported terrain input policy: {input_policy}")
     dem = crop_pad(original, height, width).astype(np.float32)
     mask = crop_pad(raw_mask, height, width)
     crater_cfg = config["craters"]
@@ -92,7 +98,8 @@ def generate(config: dict[str, Any], output: Path | None = None,
             depth_max=float(crater_cfg["depth_max_m"]))
     vertices, faces, face_uvs = build_mesh(dem, resolution)
     metadata = {"source_dem": str(config["source_dem"]), "source_mask": str(config["source_mask"]),
-        "legacy_rule": "top-left crop and zero-pad; mask is retained but not applied to height",
+        "input_policy": input_policy,
+        "processing_rule": "transpose DEM axes to match the 10 m x 6.5 m grid, then top-left crop and zero-pad; mask is retained but not applied to height",
         "width_m": float(config["width_m"]), "length_m": float(config["length_m"]),
         "resolution_m": resolution, "height_samples": height, "width_samples": width,
         "craters_enabled": enabled, "craters": crater_cfg if enabled else None,

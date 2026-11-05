@@ -1,11 +1,21 @@
 # Terrain pipeline and collider
 
-Known successful repair: `/Lunalab/Terrain/terrain_mesh` has one enabled static triangle-mesh collider (`physics:approximation = none`) and no rigid body. Saved canonical stage inspection found 650,000 points and 1,296,702 triangle faces / 3,890,106 indices, with exactly one collider beneath `/Lunalab/Terrain`. Do not use convex hull for this concave terrain, add overlapping terrain colliders, or apply a rigid body to the terrain.
+The selected scene's `/Lunalab/Terrain/terrain_mesh` has one enabled static triangle-mesh collider (`physics:approximation = none`) and no rigid body. It contains 650,000 points and 1,296,702 triangles. Keep that terrain collider as a triangle mesh; do not add overlapping terrain colliders or apply a rigid body to the terrain.
 
-Original `dem.npy`, `mask.npy`, and `heightmap16.png` are retained under `assets/terrain/source/`. The original loader sets the sample spacing to 0.01 m and copies the top-left overlap into a 1000×650 array. The saved canonical USD's vertex Z values match that cropped raw DEM exactly; it contains no generated craters. Keep generated data in `assets/terrain/processed/` and record generator parameters and hashes.
+Original `dem.npy`, `mask.npy`, and `heightmap16.png` are retained under `assets/terrain/source/`. The DEM and mask arrays are shaped 998×652, while the configured mesh grid is 650×1000. The previous loader copied the untransposed arrays into that grid, so it filled 348 columns (3.48 m) with zero-height vertices and cropped the long source axis. The corrected policy transposes both source arrays before fitting the configured grid. This retains almost all source coverage; only two columns are padded and two rows are cropped. The mask remains metadata and does not modify elevations.
 
-`terrain/generate.py` ports the relevant original OmniLRS `load_lunalab_terrain.py` rules: top-left crop/zero-pad to 1000×650 at 1 cm/sample, optional seed-42 conical craters, triangle winding, and face-varying UVs. Craters default off to reproduce the canonical stage's raw DEM heights exactly; X/Y positions match within float32 precision. Use `--craters` to generate a cratered experiment. The script writes an offline NPZ archive and never edits a USD stage. The old source script is retained in `legacy/archived_scripts/omnilrs_load_lunalab_terrain.py`.
+`terrain/generate.py` transposes the source DEM and then fits it to the 1000×650 grid at 1 cm/sample. It retains the triangle winding and UV generation, and optional seed-42 craters remain disabled by default. The corrected heights intentionally differ from the old saved scene because its flat 3.48 m strip came from the axis mismatch.
 
-`terrain/validate.py` provides a read-only USD audit when run with Isaac Sim Python or compatible `usd-core`. `terrain/repair.py` is explicitly opt-in, requires a separate output file in the source directory, and changes only the existing terrain collider's approximation/enabled state. It requires both existing collision APIs, refuses to synthesize missing colliders, and does not touch unrelated geometry.
+`terrain/build_scene_candidate.py` can write a separate `scenes/CAMERASYNCSSMOETIMES_REBUILT_CANDIDATE.usd` copy without overwriting the canonical scene. It updates only the existing terrain points and applies convex-hull collision to the seven render meshes under `/package/rock*`. The rocks already had render meshes (some only 96 faces); those meshes lacked collision APIs. Separate detailed rocks under `/World/rock1`, `/World/rock3`, and `/World/rock4` already had collision, but they are misplaced above or beyond the terrain. The promoted canonical scene has been opened and visually reviewed in Isaac Sim.
+
+From the repository root, install the optional tools and build/audit the candidate with:
+
+```powershell
+py -m pip install -e ".[terrain,usd-audit]"
+py terrain/build_scene_candidate.py
+py terrain/validate.py scenes/CAMERASYNCSSMOETIMES.usd
+```
+
+`terrain/validate.py` provides a read-only USD audit of DEM height orientation, terrain topology/collision, and the seven placed rock colliders. `terrain/repair.py` is explicitly opt-in, requires a separate output file in the source directory, and changes only the existing terrain collider's approximation/enabled state. It requires both existing collision APIs, refuses to synthesize missing colliders, and does not touch unrelated geometry.
 
 The canonical composed stage retains a source opinion for `/World/Lab/Lab/CurvedWall/Cube_003` but marks the prim inactive. Therefore it does not participate in simulation, and the original geometry remains recoverable from the preserved source layer. This matches the user's deletion decision without broad wall-mesh edits or restoring the obstruction. The validator flags the prim only if it becomes active. Older scene candidates that still activate it are kept outside the focused project archive.

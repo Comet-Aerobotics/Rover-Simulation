@@ -6,7 +6,7 @@ terrain:
   width_m: 10.0
   length_m: 6.5
   resolution_m: 0.01
-  input_policy: top_left_crop_zero_pad
+  input_policy: transpose_then_crop_zero_pad
   use_mask_to_modify_elevation: false # Legacy loader retains mask as metadata; it does not mask heights.
   craters:
     enabled: false # The saved canonical USD exactly matches raw lidar01 elevations.

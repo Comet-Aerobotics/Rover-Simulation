@@ -14,7 +14,7 @@ from pxr import Sdf, Usd
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SOURCE = ROOT / "scenes/CAMERASYNCSSMOETIMES.usd"
-DEFAULT_OUTPUT = ROOT / "scenes/CAMERASYNCSSMOETIMES_LOCAL_JACKAL_CANDIDATE.usd"
+DEFAULT_OUTPUT = ROOT / "scenes/CAMERASYNCSSMOETIMES_LOCAL_JACKAL_REBUILT_CANDIDATE.usd"
 JACKAL_ASSET = ROOT / "assets/robots/jackal/ros2_jackal_PhysX_vlp16.usd"
 WHEEL_JOINTS = (
     "front_left_wheel",

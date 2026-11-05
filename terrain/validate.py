@@ -1,6 +1,14 @@
-"""Read-only structural audit for the canonical USD terrain mesh."""
+"""Read-only terrain coverage and collision audit for a USD scene."""
 import argparse
+import sys
 from pathlib import Path
+
+import numpy as np
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from terrain.generate import crop_pad, read_config
 
 
 def validate(scene: Path) -> list[str]:
@@ -24,6 +32,17 @@ def validate(scene: Path) -> list[str]:
         problems.append("Mesh points/faces/indices are empty or inconsistent")
     if any(n != 3 for n in counts):
         problems.append("Terrain mesh contains non-triangle faces")
+    config = read_config()
+    source = np.load(ROOT / config["source_dem"], allow_pickle=False)
+    if config.get("input_policy") == "transpose_then_crop_zero_pad":
+        source = source.T
+    resolution = float(config["resolution_m"])
+    width = round(float(config["width_m"]) / resolution)
+    height = round(float(config["length_m"]) / resolution)
+    expected = crop_pad(source, height, width).astype(np.float32).ravel()
+    actual = np.asarray(points, dtype=np.float32)
+    if actual.shape != (expected.size, 3) or not np.allclose(actual[:, 2], expected, atol=1e-6):
+        problems.append("Terrain elevations do not match the configured DEM orientation and grid")
     if not prim.HasAPI(UsdPhysics.CollisionAPI):
         problems.append("Terrain mesh lacks CollisionAPI")
     else:
@@ -38,13 +57,28 @@ def validate(scene: Path) -> list[str]:
                  if p.HasAPI(UsdPhysics.CollisionAPI) and str(p.GetPath()).startswith("/Lunalab/Terrain/")]
     if colliders != [path]:
         problems.append(f"Expected exactly one terrain collider ({path}); found {colliders}")
+    rock_meshes = [p for p in stage.Traverse()
+                   if p.IsA(UsdGeom.Mesh) and str(p.GetPath()).startswith("/package/rock")]
+    rock_colliders = []
+    for rock in rock_meshes:
+        if (rock.HasAPI(UsdPhysics.CollisionAPI)
+                and "PhysicsMeshCollisionAPI" in rock.GetAppliedSchemas()
+                and rock.GetAttribute("physics:collisionEnabled").Get() is True
+                and rock.GetAttribute("physics:approximation").Get() == "convexHull"):
+            rock_colliders.append(str(rock.GetPath()))
+    if len(rock_meshes) != 7 or len(rock_colliders) != len(rock_meshes):
+        problems.append(
+            f"Expected enabled convex-hull colliders on all seven placed rock meshes; "
+            f"found {len(rock_colliders)} of {len(rock_meshes)}"
+        )
     body = prim.GetAppliedSchemas()
     if any("RigidBodyAPI" in schema for schema in body):
         problems.append("Static terrain unexpectedly has RigidBodyAPI")
     forbidden = stage.GetPrimAtPath("/World/Lab/Lab/CurvedWall/Cube_003")
     if forbidden and forbidden.IsValid() and forbidden.IsActive():
         problems.append("Cube_003 unexpectedly exists; do not auto-delete it")
-    print(f"Scene: {scene}\nTerrain points={len(points)} faces={len(counts)} indices={len(indices)}\nColliders={colliders}")
+    print(f"Scene: {scene}\nTerrain points={len(points)} faces={len(counts)} indices={len(indices)}\n"
+          f"Terrain colliders={colliders}\nPlaced rock meshes={len(rock_meshes)} colliders={len(rock_colliders)}")
     return problems
 
 if __name__ == "__main__":

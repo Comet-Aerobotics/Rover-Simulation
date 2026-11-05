@@ -103,6 +103,6 @@ for($attempt=0;$attempt -lt 20;$attempt++){
 if(-not $healthy){throw 'ROS launch did not expose both expected nodes within 20 seconds; inspect the opened terminals.'}
 & wsl.exe -d $distro --exec docker exec $container bash -lc 'source /opt/ros/humble/setup.bash && source /workspace/install/setup.bash && ros2 topic info /joy && ros2 topic info /cmd_vel'
 $isaacLauncher=Join-Path $PSScriptRoot 'start_isaac_sim.ps1'
-$scene=if($env:ROVER_SCENE){$env:ROVER_SCENE}else{'scenes/CAMERASYNCSSMOETIMES_LOCAL_JACKAL_CANDIDATE.usd'}
+$scene=if($env:ROVER_SCENE){$env:ROVER_SCENE}else{'scenes/CAMERASYNCSSMOETIMES.usd'}
 & $isaacLauncher -Scene $scene
 Write-Host 'Startup commands issued. Confirm ROS Bridge and end-to-end command delivery in Isaac Sim.'

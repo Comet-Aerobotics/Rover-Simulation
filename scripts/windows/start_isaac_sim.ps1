@@ -29,7 +29,7 @@ if (-not $Scene) {
     $Scene = if ($env:ROVER_SCENE) {
         $env:ROVER_SCENE
     } else {
-        Join-Path $repo 'scenes\CAMERASYNCSSMOETIMES_LOCAL_JACKAL_CANDIDATE.usd'
+        Join-Path $repo 'scenes\CAMERASYNCSSMOETIMES.usd'
     }
 }
 if (-not [IO.Path]::IsPathRooted($Scene)) {

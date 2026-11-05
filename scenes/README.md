@@ -1,10 +1,9 @@
 # scenes/
 
-Isaac Sim USD stages. The local-Jackal candidate is the selected default; the original scene is preserved as a baseline. The stage USD owns its robot and camera Action Graphs.
+Isaac Sim USD stages. `CAMERASYNCSSMOETIMES.usd` is the canonical scene, with the local VLP-16 Jackal, corrected DEM orientation, and colliders on the placed lunar rocks. Its visual appearance was reviewed in Isaac Sim; powered rover motion and terrain contact still need runtime checks. The stage USD owns its robot and camera Action Graphs.
 
 ## Contents
 
-- CAMERASYNCSSMOETIMES_LOCAL_JACKAL_CANDIDATE.usd
 - CAMERASYNCSSMOETIMES.usd
 - test_scenes/
 
