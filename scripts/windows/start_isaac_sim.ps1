@@ -72,7 +72,7 @@ if ((($env:PATH -split ';') | Where-Object { $_ -ieq $rosLib }).Count -eq 0) {
     $env:PATH = "$rosLib;$env:PATH"
 }
 
-$repoAlias = Join-Path $IsaacRoot '_aiaa_rover_repo'
+$repoAlias = Join-Path $IsaacRoot '_aiaa_rover_simulation_repo'
 if (Test-Path -LiteralPath $repoAlias) {
     $aliasItem = Get-Item -LiteralPath $repoAlias
     if ($aliasItem.LinkType -ne 'Junction' -or -not $aliasItem.Target) {

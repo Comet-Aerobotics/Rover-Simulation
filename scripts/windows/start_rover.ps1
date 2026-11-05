@@ -9,6 +9,18 @@ if(Test-Path (Join-Path $repo '.env')) {
 }
 $distro=if($env:WSL_DISTRO){$env:WSL_DISTRO}else{'Ubuntu'}
 $container=if($env:ROS_CONTAINER){$env:ROS_CONTAINER}else{'aiaa_rover_dev'}
+function Start-WslWindow([string]$title,[string]$command){
+  $payload=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($command))
+  $child=@'
+$Host.UI.RawUI.WindowTitle='TITLE_VALUE'
+$scriptText=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('PAYLOAD_VALUE'))
+& wsl.exe -d 'DISTRO_VALUE' -- bash -lc $scriptText
+if($LASTEXITCODE -ne 0){Write-Host "WSL command exited with code $LASTEXITCODE" -ForegroundColor Yellow}
+'@
+  $child=$child.Replace('TITLE_VALUE',$title).Replace('PAYLOAD_VALUE',$payload).Replace('DISTRO_VALUE',$distro)
+  $encoded=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($child))
+  Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoLogo','-NoProfile','-NoExit','-EncodedCommand',$encoded) -WindowStyle Normal | Out-Null
+}
 Write-Host "Repository: $repo`nWSL distro: $distro`nROS container: $container`nMode: $Mode"
 & wsl.exe -d $distro --exec true 2>$null
 if($LASTEXITCODE -ne 0){throw "WSL distro '$distro' could not start."}
@@ -42,8 +54,11 @@ if($targetExit -eq 0){
 } else{Write-Host "Target container '$container' is not present on WSL Docker."}
 $legacyNodes=@()
 if($oldExit -eq 0 -and $oldState -eq 'running'){
-  $legacyNodes=@(& wsl.exe -d $distro --exec docker exec cometbot_dev bash -lc 'source /opt/ros/humble/setup.bash && ros2 node list 2>/dev/null')
+  $legacyProcesses=@(& wsl.exe -d $distro --exec docker exec cometbot_dev ps -eo args=)
   if($LASTEXITCODE -ne 0){throw 'Could not verify legacy ROS nodes; refusing to launch duplicate services.'}
+  $legacyControlProcesses=@($legacyProcesses | Where-Object { $_ -match '/root/CAN/cometbot_ws' -and $_ -match '(^|[ /])joy_node([ /]|$)|(^|[ /])teleop_publisher([ /]|$)|ros2 launch cometbot_control\.teleop\.launch\.py' })
+  if(@($legacyControlProcesses | Where-Object { $_ -match 'joy_node' }).Count -gt 0){$legacyNodes+='/joy_node'}
+  if(@($legacyControlProcesses | Where-Object { $_ -match 'teleop_publisher' }).Count -gt 0){$legacyNodes+='/teleop_publisher'}
   Write-Host "Legacy cometbot_dev nodes: $($legacyNodes -join ', ')"
 }
 if($Mode -eq 'Diagnostics'){return}
@@ -56,21 +71,37 @@ if($targetState -ne 'running'){
   & wsl.exe -d $distro --exec bash -lc "cd '$linuxRepo' && docker compose -f docker/compose.yaml up -d --build"
   if($LASTEXITCODE -ne 0){throw 'Compose build/start failed on the WSL Docker engine.'}
 }
-$nodeList=@(& wsl.exe -d $distro --exec bash -lc "docker exec $container bash -lc 'source /opt/ros/humble/setup.bash; source /workspace/install/setup.bash; ros2 node list 2>/dev/null'")
-if($nodeList -match '/joy_node' -or $nodeList -match '/teleop_publisher'){throw 'Existing Joy/teleop node detected; refusing duplicate launch.'}
-$launch="docker exec -it $container bash -lc 'source /opt/ros/humble/setup.bash; source /workspace/install/setup.bash; ros2 launch cometbot_control teleop.launch.py'"
-Start-Process wsl.exe -ArgumentList @('-d',$distro,'--exec','bash','-lc',$launch) -WindowStyle Normal
-$monitor="docker exec -it $container bash -lc 'source /opt/ros/humble/setup.bash; source /workspace/install/setup.bash; ros2 topic echo /joy'"
-Start-Process wsl.exe -ArgumentList @('-d',$distro,'--exec','bash','-lc',$monitor) -WindowStyle Normal
-Start-Process wsl.exe -ArgumentList @('-d',$distro,'--exec','bash') -WindowStyle Normal
+$nodeProcesses=@(& wsl.exe -d $distro --exec docker exec $container ps -eo args=)
+if($LASTEXITCODE -ne 0){throw "Could not inspect processes in '$container'."}
+$hasJoy=@($nodeProcesses | Where-Object { $_ -match '(^|[ /])joy_node([ /]|$)' }).Count -gt 0
+$hasTeleop=@($nodeProcesses | Where-Object { $_ -match '(^|[ /])teleop_publisher([ /]|$)' }).Count -gt 0
+if($hasJoy -and $hasTeleop){
+  Write-Host 'ROS teleoperation nodes are already running; reusing them.'
+} elseif($hasJoy -or $hasTeleop){
+  throw "Partial ROS teleoperation is already running in '$container'; resolve it before starting another launch."
+} else {
+  $teleopCommand='source /opt/ros/humble/setup.bash && source /workspace/install/setup.bash && ros2 launch cometbot_control teleop.launch.py > /tmp/aiaa_rover_teleop.log 2>&1'
+  & wsl.exe -d $distro --exec docker exec -d $container bash -lc $teleopCommand
+  if($LASTEXITCODE -ne 0){throw 'Could not start the ROS teleoperation launch in the rover container.'}
+}
+$monitor="docker exec -it $container bash -lc 'source /opt/ros/humble/setup.bash && source /workspace/install/setup.bash && ros2 topic echo /joy'"
+Write-Host 'Opening Ubuntu WSL terminal.'
+Start-WslWindow 'ROVER - Ubuntu shell' 'exec bash -i'
+Write-Host 'Opening Docker shell.'
+Start-WslWindow 'ROVER - ROS container shell' "exec docker exec -it -w /workspace $container bash -i"
+Write-Host 'Opening /joy controller input monitor.'
+Start-WslWindow 'ROVER - /joy monitor' $monitor
 $healthy=$false
 for($attempt=0;$attempt -lt 20;$attempt++){
-  $nodeList=@(& wsl.exe -d $distro --exec bash -lc "docker exec $container bash -lc 'source /opt/ros/humble/setup.bash; source /workspace/install/setup.bash; ros2 node list 2>/dev/null'")
-  if($nodeList -match '/joy_node' -and $nodeList -match '/teleop_publisher'){$healthy=$true;break}
+  $nodeProcesses=@(& wsl.exe -d $distro --exec docker exec $container ps -eo args=)
+  if($LASTEXITCODE -ne 0){throw "Could not inspect processes in '$container'."}
+  $hasJoy=@($nodeProcesses | Where-Object { $_ -match '(^|[ /])joy_node([ /]|$)' }).Count -gt 0
+  $hasTeleop=@($nodeProcesses | Where-Object { $_ -match '(^|[ /])teleop_publisher([ /]|$)' }).Count -gt 0
+  if($hasJoy -and $hasTeleop){$healthy=$true;break}
   Start-Sleep -Seconds 1
 }
 if(-not $healthy){throw 'ROS launch did not expose both expected nodes within 20 seconds; inspect the opened terminals.'}
-& wsl.exe -d $distro --exec bash -lc "docker exec $container bash -lc 'source /opt/ros/humble/setup.bash; source /workspace/install/setup.bash; ros2 topic info /joy; ros2 topic info /cmd_vel'"
+& wsl.exe -d $distro --exec docker exec $container bash -lc 'source /opt/ros/humble/setup.bash && source /workspace/install/setup.bash && ros2 topic info /joy && ros2 topic info /cmd_vel'
 $isaacLauncher=Join-Path $PSScriptRoot 'start_isaac_sim.ps1'
 $scene=if($env:ROVER_SCENE){$env:ROVER_SCENE}else{'scenes/CAMERASYNCSSMOETIMES_LOCAL_JACKAL_CANDIDATE.usd'}
 & $isaacLauncher -Scene $scene
