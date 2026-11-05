@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aiaa-isaac-sim-rover"
+version = "0.1.0"
+description = "AIAA rover simulation tooling and configuration"
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+terrain = ["numpy>=1.26", "PyYAML>=6"]
+usd-audit = ["usd-core>=24.08"]
+test = ["pytest>=8", "numpy>=1.26", "PyYAML>=6"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools]
+packages = []
+py-modules = []

@@ -1,0 +1,22 @@
+terrain:
+  source_dem: assets/terrain/source/dem.npy
+  source_mask: assets/terrain/source/mask.npy
+  output_archive: assets/terrain/processed/lunalab_terrain.npz
+  mesh_prim: /Lunalab/Terrain/terrain_mesh
+  width_m: 10.0
+  length_m: 6.5
+  resolution_m: 0.01
+  input_policy: top_left_crop_zero_pad
+  use_mask_to_modify_elevation: false # Legacy loader retains mask as metadata; it does not mask heights.
+  craters:
+    enabled: false # The saved canonical USD exactly matches raw lidar01 elevations.
+    count: 20
+    seed: 42
+    radius_min_m: 0.2
+    radius_max_m: 0.8
+    depth_min_m: 0.02
+    depth_max_m: 0.1
+  collider:
+    static: true
+    approximation: none
+    require_mesh_collision_api: true

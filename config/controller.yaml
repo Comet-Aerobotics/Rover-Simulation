@@ -1,0 +1,10 @@
+teleop_publisher:
+  ros__parameters:
+    joy_topic: /joy
+    cmd_vel_topic: /cmd_vel
+    cmd_vel_pub_frequency: 20.0
+    linear_axis: 1
+    angular_axis: 3
+    deadzone: 0.1
+    joystick_power: 3
+    enable_button_index: -1 # configure an actual deadman button before enabling

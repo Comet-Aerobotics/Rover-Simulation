@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <!-- Intentionally no hard-coded initialPeers. Use normal discovery on the WSL host network. -->
+  <participant profile_name="rover_default" is_default_profile="true">
+    <rtps>
+      <builtin><avoid_builtin_multicast>false</avoid_builtin_multicast></builtin>
+    </rtps>
+  </participant>
+</profiles>

@@ -1,0 +1,26 @@
+isaac_sim:
+  required_version: "6.1.0"
+  install_root_env: ISAAC_SIM_ROOT
+  scene: "scenes/CAMERASYNCSSMOETIMES_LOCAL_JACKAL_CANDIDATE.usd"
+  stage_up_axis: Z
+  meters_per_unit: 1.0
+robot:
+  articulation_root: /jackal
+  action_graph: /jackal/ActionGraph
+  scene_asset: assets/robots/jackal/ros2_jackal_PhysX_vlp16.usd
+  local_jackal_candidate_scene: scenes/CAMERASYNCSSMOETIMES_LOCAL_JACKAL_CANDIDATE.usd
+  local_jackal_candidate_asset: assets/robots/jackal/ros2_jackal_PhysX_vlp16.usd
+  local_candidates:
+    - assets/robots/jackal/ros2_jackal_PhysX_vlp16.usd
+    - assets/robots/jackal/ros2_jackal_PhysX_vlp16_stereo.usd
+  local_candidate_status: opened and rendered in Isaac Sim 6.1; static wheel-terrain contact observed; powered motion and contact stability remain unverified
+  wheel_joints: [front_left_wheel_joint, front_right_wheel_joint, rear_left_wheel_joint, rear_right_wheel_joint]
+  wheel_radius_m: 0.098
+  wheel_separation_m: 0.3755
+sensors:
+  oak_camera_prim: /World/DM9098Pro_enclosure/OAK_D_Pro_RGB
+  oak_frame_id: oak_d_optical_frame
+  depth_topic: /oak_d/depth
+  camera_info_topic: oak_d/camera_info
+  render_width: 640
+  render_height: 400

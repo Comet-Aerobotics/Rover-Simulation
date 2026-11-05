@@ -1,0 +1,17 @@
+.env
+.venv/
+*.egg-info/
+.rover-state/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+build/
+install/
+log/
+*.log
+*.tmp
+work/
+assets/terrain/processed/*
+!assets/terrain/processed/.gitkeep
+terrain/processed/*
+!terrain/processed/.gitkeep

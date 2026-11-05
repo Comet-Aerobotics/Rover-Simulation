@@ -1,0 +1,8 @@
+ros:
+  distro: humble
+  rmw_implementation: rmw_fastrtps_cpp
+  domain_id: 0
+  network:
+    docker_engine: WSL2
+    docker_network_mode: host
+    fastdds_initial_peers: []

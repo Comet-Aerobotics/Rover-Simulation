@@ -1,0 +1,21 @@
+* text=auto
+*.ps1 text eol=crlf
+*.sh text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.xml text eol=lf
+*.usd binary
+*.usdc binary
+*.usda text eol=lf
+*.exr binary
+*.npy binary
+*.npz binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.usdz binary
+legacy/archived_scripts/** binary
+assets/**/LICENSE.txt binary
+*.ies binary

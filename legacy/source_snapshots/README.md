@@ -1,0 +1,1 @@
+Full intake copies and Git histories are preserved outside the focused project at ..\..\..\AIAA-Isaac-Sim-Rover-source-archive\source_snapshots. See ..\..\..\AIAA-Isaac-Sim-Rover-source-archive\README.md. Only the selected original scripts needed for this simulation are copied into legacy/archived_scripts.

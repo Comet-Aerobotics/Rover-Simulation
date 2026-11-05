@@ -1,0 +1,43 @@
+services:
+  cometbot:
+    build: .
+    container_name: cometbot_dev
+    privileged: true
+    network_mode: host
+    pid: host
+    ipc: host
+    devices:
+      - /dev/input:/dev/input
+    environment:
+      - ROS_DOMAIN_ID=0
+      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+      - FASTRTPS_DEFAULT_PROFILES_FILE=/root/fastdds.xml
+      # --- GUI & WSLg Fixes ---
+      - DISPLAY=${DISPLAY}
+      - WAYLAND_DISPLAY=${WAYLAND_DISPLAY}
+      - XDG_RUNTIME_DIR=/run/user/1000
+      - PULSE_SERVER=${PULSE_SERVER}
+      - LIBGL_ALWAYS_SOFTWARE=1
+      - QT_X11_NO_MITSHM=1
+      # Point to the correct ROS-vendored Ogre libraries for RViz2
+      - LD_LIBRARY_PATH=/opt/ros/humble/opt/rviz_ogre_vendor/lib:/opt/ros/humble/lib:/opt/ros/humble/lib/x86_64-linux-gnu
+    volumes:
+      - ./CAN:/root/CAN
+      - ./fastdds.xml:/root/fastdds.xml
+      # --- WSLg Socket Mounts ---
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - /mnt/wslg:/mnt/wslg
+      # Maps the host runtime dir to the expected location in the container
+      - /mnt/wslg/runtime-dir/wayland-0:/run/user/1000/wayland-0
+    command: tail -f /dev/null
+
+  foxglove_bridge:
+    image: husarion/foxglove-bridge:humble-0.7.7-20240708
+    container_name: foxglove_bridge
+    network_mode: host
+    environment:
+      - ROS_DOMAIN_ID=0
+    # Override the default command to ensure the port is exactly what you want
+    command: ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765
+    depends_on:
+      - cometbot 
