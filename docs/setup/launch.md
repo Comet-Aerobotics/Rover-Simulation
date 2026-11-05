@@ -12,6 +12,8 @@ From PowerShell at the repository root:
 
 `start_rover_all.ps1` is the familiar legacy-name entry point and forwards to the same supported launcher. Running it without arguments starts the combined stack; pass `-Mode Diagnostics` to inspect without starting it. Use `start_isaac_sim.ps1` to open only Isaac Sim with the canonical scene and Fast DDS environment, without starting Docker or ROS. It loads `scenes/CAMERASYNCSSMOETIMES.usd` through Isaac Sim's startup `--exec` Python hook. Set `ROVER_SCENE` in `.env` or pass `-Scene` to select another scene. If Isaac Sim is already open, the script leaves it untouched and exits; save your current stage before opening another scene manually.
 
+To compare the estimated rover mass, launch a separate 55 kg candidate with `./scripts/windows/start_isaac_sim.ps1 -Scene "scenes/in work/CAMERASYNCSSMOETIMES_55KG_CANDIDATE.usd"`. It is a test scene; the default remains the canonical stage until its motion behavior is reviewed.
+
 The launcher creates `_aiaa_rover_simulation_repo` as a junction under the Isaac Sim install and points it at this repository. Kit's `--exec` parser splits script paths at spaces, so the launcher passes the helper through this no-space junction. It refuses to reuse an existing alias if it points somewhere else. The selected scene path remains in the child process environment.
 
 The script wakes Ubuntu, checks USB attachment, inspects the WSL Docker engine and ROS nodes, and does not start nodes. Use the WSL context: the Windows Docker CLI may point at a separate `desktop-linux` context.
