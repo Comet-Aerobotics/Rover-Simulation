@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([string]$Container,[string]$Distro)
+param([string]$Container,[string]$Distro,[switch]$WhatIf)
 $ErrorActionPreference='Stop'
 $repo=(Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $envFile=Join-Path $repo '.env'
@@ -9,9 +9,28 @@ if (-not $Container) { $Container=if ($env:ROS_CONTAINER) {$env:ROS_CONTAINER} e
 $state=& wsl.exe -d $Distro --exec bash -lc "docker inspect -f '{{.State.Running}}' $Container 2>/dev/null"
 if($LASTEXITCODE -ne 0){Write-Host "Container $Container is not present in WSL Docker; no changes made.";return}
 if ($state -eq 'true') {
-  & wsl.exe -d $Distro --exec bash -lc "docker exec $Container pkill -INT -f '[r]os2 launch cometbot_control.teleop.launch.py' 2>/dev/null || true"
-  & wsl.exe -d $Distro --exec bash -lc "docker exec $Container pkill -INT -f '[t]eleop_publisher' 2>/dev/null || true"
-  & wsl.exe -d $Distro --exec bash -lc "docker exec $Container pkill -INT -f '[j]oy_node' 2>/dev/null || true"
-  Write-Host "Sent SIGINT to the managed teleop launch and its two known nodes in $Container. The container remains running."
+  # docker exec ps/pkill sees every host process when a legacy container uses
+  # pid: host. docker top scopes the list to the selected container's cgroup.
+  $processRows = @(& wsl.exe -d $Distro --exec docker top $Container -eo pid,args)
+  if ($LASTEXITCODE -ne 0) { throw "Could not list processes owned by $Container; no signals sent." }
+  $controlPids = @(
+    foreach ($row in $processRows) {
+      if ($row -match '^\s*(\d+)\s+(.+)$') {
+        $pidNumber = [int]$matches[1]
+        $command = $matches[2]
+      } else { continue }
+      if ($command -match '(?:^|/)ros2 launch cometbot_control teleop\.launch\.py' -or
+          $command -match '(?:^|/)teleop_publisher(?:\s|$)' -or
+          $command -match '(?:^|/)joy_node(?:\s|$)') {
+        $pidNumber
+      }
+    }
+  ) | Sort-Object -Unique
+  foreach ($pidNumber in $controlPids) {
+    if ($WhatIf) { Write-Host "Would send SIGINT to PID $pidNumber in $Container."; continue }
+    & wsl.exe -d $Distro --user root --exec kill -INT $pidNumber
+    if ($LASTEXITCODE -ne 0) { Write-Warning "Could not signal PID $pidNumber in $Container." }
+  }
+  if (-not $WhatIf) { Write-Host "Sent SIGINT to $($controlPids.Count) container-owned teleop process(es) in $Container. The container remains running." }
 } else { Write-Host "Container $Container is stopped; no container changes made." }
 Write-Host 'Isaac Sim is left open to protect unsaved stage edits. Stop or save it interactively.'
