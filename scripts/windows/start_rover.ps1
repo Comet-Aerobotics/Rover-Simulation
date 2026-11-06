@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([ValidateSet('Diagnostics','Start')][string]$Mode='Diagnostics')
+param([ValidateSet('Diagnostics','Start')][string]$Mode='Diagnostics',[switch]$SandDeformation)
 $ErrorActionPreference='Stop'
 $repo=(Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 if(Test-Path (Join-Path $repo '.env')) {
@@ -167,6 +167,10 @@ if(-not $healthy){throw 'ROS launch did not expose both expected nodes within 20
 & wsl.exe -d $distro --exec docker exec $container bash -lc 'source /opt/ros/humble/setup.bash && source /workspace/install/setup.bash && ros2 topic info /joy && ros2 topic info /cmd_vel'
 $isaacLauncher=Join-Path $PSScriptRoot 'start_isaac_sim.ps1'
 $scene=if($env:ROVER_SCENE){$env:ROVER_SCENE}else{'scenes/CAMERASYNCSSMOETIMES.usd'}
-& $isaacLauncher -Scene $scene -RosDistro 'humble'
+if ($SandDeformation -or $env:ROVER_SAND_DEFORMATION -eq '1') {
+  & $isaacLauncher -RosDistro 'humble' -SandDeformation
+} else {
+  & $isaacLauncher -Scene $scene -RosDistro 'humble'
+}
 Write-Host 'Startup commands issued. Confirm ROS Bridge and end-to-end command delivery in Isaac Sim.'
 Write-Host 'Open the configured scene and press Play; the rover Action Graph is driven by simulation playback.'

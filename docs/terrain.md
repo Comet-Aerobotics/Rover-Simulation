@@ -19,3 +19,35 @@ py terrain/validate.py scenes/CAMERASYNCSSMOETIMES.usd
 `terrain/validate.py` provides a read-only USD audit of DEM height orientation, terrain topology/collision, and the seven placed rock colliders. `terrain/repair.py` is explicitly opt-in, requires a separate output file in the source directory, and changes only the existing terrain collider's approximation/enabled state. It requires both existing collision APIs, refuses to synthesize missing colliders, and does not touch unrelated geometry.
 
 The canonical composed stage retains a source opinion for `/World/Lab/Lab/CurvedWall/Cube_003` but marks the prim inactive. Therefore it does not participate in simulation, and the original geometry remains recoverable from the preserved source layer. This matches the user's deletion decision without broad wall-mesh edits or restoring the obstruction. The validator flags the prim only if it becomes active. Older scene candidates that still activate it are kept outside the focused project archive.
+
+## Wheel-driven sand ruts (opt in)
+
+The sand candidate starts from `scenes/in work/CAMERASYNCSSMOETIMES_55KG_CANDIDATE.usd`. Its visible terrain is still one mesh, but its large collider is disabled and replaced with 176 invisible static triangle-mesh tiles. The runtime samples each wheel's position, heading, angular speed, travel speed, and the nearest physics surface. A bounded empirical soil model lowers the terrain beneath loaded wheels and builds small side berms. Changed visual vertices and collision tiles are updated together, so the rover can sink into the rut. Rocks remain rigid, and a wheel whose nearest surface is a rock does not stamp sand.
+
+The current normal load is the 55 kg rover's weight divided equally among four wheels. It is an estimate; suspension load transfer, soil shear, rolling resistance, and individual grains are not modeled. The values in `config/terrain.yaml` are provisional and should be calibrated against wheel sinkage and traction measurements from the intended sand. The model limits rut depth to 6 cm. The update interval is 0.2 s and tiles span 64 grid cells; adjust these only after checking runtime cost and collision behavior.
+
+Build and validate a separate sand scene using Isaac Sim's Python (set `$isaacPython` to the installed `python.bat`):
+
+```powershell
+$isaacPython = 'C:\isaac-sim\_build\windows-x86_64\release\python.bat'
+& $isaacPython terrain/build_sand_scene.py
+& $isaacPython terrain/validate_sand_scene.py
+```
+
+The builder refuses to overwrite an existing candidate unless passed `--overwrite`. The generated scene is ignored by Git. Save and close any existing Isaac Sim scene before launching this candidate; the launcher will leave an already running Isaac Sim process untouched.
+
+```powershell
+./scripts/windows/start_rover_all.ps1 -SandDeformation
+```
+
+Once the scene opens, press Play and drive normally. Sand edits exist in the open stage; save the candidate scene if the ruts should persist. To reset the surface, close the candidate and rerun the builder with `--overwrite`. The original 55 kg scene and canonical scene are not changed by the builder.
+
+For an offline replay, use a CSV with columns `time_s,wheel,x_m,y_m,center_height_m,heading_rad,ground_speed_m_s,spin_rad_s,normal_load_n`. Positions and heights are in the terrain mesh's local frame and SI units. Each wheel needs an initial row and later rows with increasing times; only later rows stamp the path. The generator uses the same soil model as the runtime:
+
+```powershell
+py terrain/generate.py --wheel-trace work/wheels.csv --output work/deformed_terrain.npz
+& $isaacPython terrain/build_sand_scene.py --archive work/deformed_terrain.npz --overwrite
+& $isaacPython terrain/validate_sand_scene.py
+```
+
+`--wheel-trace` requires an explicit output path to protect the default terrain archive. An offline replay represents a prescribed wheel path; it does not simulate the vehicle following that path.

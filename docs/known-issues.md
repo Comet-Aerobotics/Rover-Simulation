@@ -9,6 +9,7 @@ Updated 2026-11-05 after checking the running WSL ROS stack, the open 55 kg cand
 
 ## Still unverified, with a specific reason to check
 
+- **Sand calibration and live driving acceptance:** the new opt-in sand scene makes wheel ruts in the rendered and colliding terrain, and a headless Isaac Sim check showed the rover settling lower than on rigid ground. The soil coefficients use provisional values and nominal per-wheel load. Controller-driven travel on this sand scene and agreement with physical sand measurements remain to be checked; see `docs/terrain.md`.
 - **Camera acceptance:** RGB, depth, and camera-info messages reached WSL, and the saved camera pose and graph passed structural checks. Image content, camera-info calibration values, and physical mount calibration have not been measured. These are requirements only if the camera feed is part of the current simulation goal. Physical calibration requires a real camera reference.
 - **Canonical-scene dynamics:** the user confirmed controller-driven motion in the open `scenes/in work/CAMERASYNCSSMOETIMES_55KG_CANDIDATE.usd`. That does not establish powered motion or prolonged contact behavior in the separate canonical scene. The candidate's 55 kg mass should be promoted only if its settling and handling are preferable in a comparison.
 

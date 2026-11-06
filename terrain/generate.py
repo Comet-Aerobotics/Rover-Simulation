@@ -4,12 +4,17 @@ This is an offline asset generator. It never opens or edits an Isaac Sim stage.
 """
 from __future__ import annotations
 import argparse
+import csv
 import json
 from pathlib import Path
+import sys
 from typing import Any
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from terrain.deformation import RutField, SoilParameters, WheelSample
 
 
 def read_config(path: Path = ROOT / "config/terrain.yaml") -> dict[str, Any]:
@@ -71,8 +76,42 @@ def build_mesh(dem: np.ndarray, resolution: float) -> tuple[np.ndarray, np.ndarr
     return vertices, faces, face_uvs
 
 
+def apply_wheel_trace(dem: np.ndarray, resolution: float, trace: Path,
+                      parameters: SoilParameters) -> tuple[np.ndarray, int]:
+    """Replay a time-ordered wheel CSV through the same rut model as Isaac Sim."""
+    field = RutField(dem, resolution, parameters)
+    previous: dict[str, tuple[float, float, float]] = {}
+    count = 0
+    with trace.open(newline="", encoding="utf-8-sig") as stream:
+        reader = csv.DictReader(stream)
+        required = {"time_s", "wheel", "x_m", "y_m", "center_height_m",
+                    "heading_rad", "ground_speed_m_s", "spin_rad_s", "normal_load_n"}
+        if not reader.fieldnames or not required.issubset(reader.fieldnames):
+            raise ValueError(f"Wheel trace needs CSV columns: {', '.join(sorted(required))}")
+        for row in reader:
+            time_s = float(row["time_s"])
+            wheel_id = row["wheel"].strip()
+            if not wheel_id:
+                raise ValueError("Wheel trace has an empty wheel identifier")
+            sample = WheelSample(*(float(row[key]) for key in (
+                "x_m", "y_m", "center_height_m", "heading_rad",
+                "ground_speed_m_s", "spin_rad_s", "normal_load_n")))
+            last = previous.get(wheel_id)
+            if last is not None:
+                dt_s = time_s - last[0]
+                if dt_s <= 0:
+                    raise ValueError(f"Wheel trace times must increase for {wheel_id}")
+                field.stamp(sample, dt_s, previous_xy_m=(last[1], last[2]))
+            previous[wheel_id] = (time_s, sample.x_m, sample.y_m)
+            count += 1
+    return field.height, count
+
+
 def generate(config: dict[str, Any], output: Path | None = None,
-             *, add_craters: bool | None = None) -> Path:
+             *, add_craters: bool | None = None,
+             wheel_trace: Path | None = None) -> Path:
+    if wheel_trace is not None and output is None:
+        raise ValueError("A wheel trace requires --output to preserve the default terrain archive")
     dem_path = ROOT / config["source_dem"]
     mask_path = ROOT / config["source_mask"]
     output = output or (ROOT / config["output_archive"])
@@ -96,6 +135,11 @@ def generate(config: dict[str, Any], output: Path | None = None,
             resolution=resolution, radius_min=float(crater_cfg["radius_min_m"]),
             radius_max=float(crater_cfg["radius_max_m"]), depth_min=float(crater_cfg["depth_min_m"]),
             depth_max=float(crater_cfg["depth_max_m"]))
+    trace_count = 0
+    if wheel_trace is not None:
+        soil_cfg = config["deformation"]
+        soil = SoilParameters(**{key: soil_cfg[key] for key in SoilParameters.__dataclass_fields__})
+        dem, trace_count = apply_wheel_trace(dem, resolution, wheel_trace, soil)
     vertices, faces, face_uvs = build_mesh(dem, resolution)
     metadata = {"source_dem": str(config["source_dem"]), "source_mask": str(config["source_mask"]),
         "input_policy": input_policy,
@@ -103,7 +147,9 @@ def generate(config: dict[str, Any], output: Path | None = None,
         "width_m": float(config["width_m"]), "length_m": float(config["length_m"]),
         "resolution_m": resolution, "height_samples": height, "width_samples": width,
         "craters_enabled": enabled, "craters": crater_cfg if enabled else None,
-        "mesh_prim": config["mesh_prim"]}
+        "mesh_prim": config["mesh_prim"],
+        "wheel_trace": str(wheel_trace) if wheel_trace is not None else None,
+        "wheel_trace_samples": trace_count}
     output.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(output, vertices=vertices, faces=faces, face_uvs=face_uvs,
         dem=dem, mask=mask, metadata_json=json.dumps(metadata, sort_keys=True))
@@ -115,6 +161,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=ROOT/"config/terrain.yaml")
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--wheel-trace", type=Path,
+        help="CSV of time, wheel positions, speeds, spin, and normal loads in terrain-local metres")
     crater_mode = parser.add_mutually_exclusive_group()
     crater_mode.add_argument("--craters", dest="add_craters", action="store_true",
         help="Apply the configured seeded craters, overriding config")
@@ -122,4 +170,5 @@ if __name__ == "__main__":
         help="Disable craters, overriding config")
     parser.set_defaults(add_craters=None)
     args = parser.parse_args()
-    generate(read_config(args.config), args.output, add_craters=args.add_craters)
+    generate(read_config(args.config), args.output, add_craters=args.add_craters,
+             wheel_trace=args.wheel_trace)

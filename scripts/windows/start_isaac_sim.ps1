@@ -2,6 +2,7 @@
 param(
     [string]$IsaacRoot,
     [string]$Scene,
+    [switch]$SandDeformation,
     [ValidateSet('jazzy', 'humble')]
     [string]$RosDistro = 'humble'
 )
@@ -26,7 +27,9 @@ if (-not $IsaacRoot) {
     }
 }
 if (-not $Scene) {
-    $Scene = if ($env:ROVER_SCENE) {
+    $Scene = if ($SandDeformation -or $env:ROVER_SAND_DEFORMATION -eq '1') {
+        Join-Path $repo 'scenes\in work\CAMERASYNCSSMOETIMES_55KG_SAND_CANDIDATE.usd'
+    } elseif ($env:ROVER_SCENE) {
         $env:ROVER_SCENE
     } else {
         Join-Path $repo 'scenes\CAMERASYNCSSMOETIMES.usd'
@@ -55,6 +58,9 @@ if ($existing) {
     Write-Host 'Isaac Sim/Kit is already running; leaving the open stage untouched.' -ForegroundColor Yellow
     $existing | Select-Object Name, ProcessId | Format-Table -AutoSize
     Write-Warning "The running Isaac Sim process keeps its original ROS environment. Restart it to apply ROS $RosDistro / Fast DDS / domain $requestedDomain."
+    if ($SandDeformation -or $env:ROVER_SAND_DEFORMATION -eq '1') {
+        Write-Warning 'Sand deformation cannot attach to an already running Isaac Sim process. Save any open scene changes, close Isaac Sim, and relaunch with -SandDeformation.'
+    }
     return
 }
 
@@ -93,12 +99,16 @@ if (-not (Test-Path -LiteralPath $openSceneScript)) {
 }
 
 $env:AIAA_ROVER_SCENE = $Scene
+$sandEnabled = $SandDeformation -or $env:ROVER_SAND_DEFORMATION -eq '1'
+$env:AIAA_ROVER_SAND_DEFORMATION = if ($sandEnabled) { '1' } else { '0' }
 Write-Host "Launching Isaac Sim with ROS $RosDistro / Fast DDS / domain $env:ROS_DOMAIN_ID" -ForegroundColor Cyan
 Write-Host "Opening scene: $Scene"
+if ($sandEnabled) { Write-Host 'Wheel-driven sand deformation enabled.' -ForegroundColor Cyan }
 try {
     # Kit's --exec file parser splits paths at spaces even when quoted. The
     # no-space junction keeps the project itself in its original location.
     Start-Process -FilePath $kitExe -ArgumentList @($appKit, '--exec', "`"$openSceneScript`"") -WorkingDirectory $IsaacRoot
 } finally {
     Remove-Item Env:AIAA_ROVER_SCENE -ErrorAction SilentlyContinue
+    Remove-Item Env:AIAA_ROVER_SAND_DEFORMATION -ErrorAction SilentlyContinue
 }

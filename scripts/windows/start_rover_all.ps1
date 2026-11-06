@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [ValidateSet('Diagnostics', 'Start')]
-    [string]$Mode = 'Start'
+    [string]$Mode = 'Start',
+    [switch]$SandDeformation
 )
 
 $ErrorActionPreference = 'Stop'
@@ -10,4 +11,4 @@ if (-not (Test-Path -LiteralPath $launcher)) {
     throw "Supported rover launcher not found: $launcher"
 }
 
-& $launcher -Mode $Mode
+& $launcher -Mode $Mode -SandDeformation:$SandDeformation

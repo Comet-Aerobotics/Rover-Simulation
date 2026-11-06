@@ -11,6 +11,7 @@ log/
 *.log
 *.tmp
 work/
+scenes/in work/CAMERASYNCSSMOETIMES_55KG_SAND_CANDIDATE.usd
 assets/terrain/processed/*
 !assets/terrain/processed/.gitkeep
 terrain/processed/*
