@@ -3,7 +3,7 @@ param(
     [string]$IsaacRoot,
     [string]$Scene,
     [ValidateSet('jazzy', 'humble')]
-    [string]$RosDistro = 'jazzy'
+    [string]$RosDistro = 'humble'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -51,13 +51,15 @@ if (-not (Test-Path -LiteralPath $Scene)) {
 $existing = Get-CimInstance Win32_Process |
     Where-Object { $_.Name -match '(?i)^isaac-sim(\.exe)?$|^kit(\.exe)?$' }
 if ($existing) {
+    $requestedDomain = if ($env:ROS_DOMAIN_ID) { $env:ROS_DOMAIN_ID } else { '0' }
     Write-Host 'Isaac Sim/Kit is already running; leaving the open stage untouched.' -ForegroundColor Yellow
     $existing | Select-Object Name, ProcessId | Format-Table -AutoSize
+    Write-Warning "The running Isaac Sim process keeps its original ROS environment. Restart it to apply ROS $RosDistro / Fast DDS / domain $requestedDomain."
     return
 }
 
-# The ROS 2 Bridge in the observed Isaac Sim 6.1 install provides Jazzy.
-# Humble remains an explicit option for installs that bundle it.
+# Prefer the bundled Humble libraries to match the Docker ROS runtime.
+# Jazzy remains available for installs that do not bundle Humble.
 $rosLib = Join-Path $IsaacRoot "exts\isaacsim.ros2.core\$RosDistro\lib"
 if (-not (Test-Path -LiteralPath $rosLib)) {
     throw "Isaac Sim ROS 2 libraries not found for '$RosDistro': $rosLib"

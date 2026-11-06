@@ -35,7 +35,7 @@ The stop script sends SIGINT only to the named launch/node processes; it leaves 
 .\scripts\windows\start_rover.ps1 -Mode Start
 ```
 
-It builds/starts `aiaa_rover_dev` from `docker/compose.yaml`, opens WSL and ROS terminals plus `/joy` monitoring, launches the canonical USD when Isaac Sim is not already open, and checks expected ROS nodes/topics. A present `/cmd_vel` publisher/subscriber does not establish Windows-to-WSL delivery. Confirm Bridge startup and subscriber matching in Isaac Sim, then run safe, immobilized-rover end-to-end tests before motion.
+It builds/starts `aiaa_rover_dev` from `docker/compose.yaml`, opens WSL and ROS terminals plus `/joy` monitoring, launches the configured USD when Isaac Sim is not already open, and checks expected ROS nodes/topics. Press Play in the intended scene because the rover Action Graph runs on playback ticks. A present `/cmd_vel` publisher/subscriber does not establish Windows-to-WSL delivery. Confirm Bridge startup and subscriber matching in Isaac Sim, then run safe, immobilized-rover end-to-end tests before motion.
 
 ## Shutdown
 

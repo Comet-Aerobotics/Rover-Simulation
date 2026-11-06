@@ -34,13 +34,18 @@ if($usbExit -eq 0){
   $controllerRows=@($usbOutput | Where-Object { $_ -match '(?i)stadia|google.*controller' -and $_ -match '^\s*\d+-\d+' })
   if($controllerRows.Count -eq 1){
     $busid=[regex]::Match($controllerRows[0],'^\s*(\d+-\d+)').Groups[1].Value
-    if($controllerRows[0] -notmatch '(?i)attached'){Write-Host "Attaching identified controller $busid to WSL"; & usbipd.exe attach --wsl --busid $busid}
+    if($controllerRows[0] -notmatch '(?i)attached'){
+      Write-Host "Attaching identified controller $busid to WSL"
+      & usbipd.exe attach --wsl --busid $busid
+      if($LASTEXITCODE -ne 0){throw "Could not attach controller $busid to WSL."}
+    }
     else{Write-Host "Controller $busid is already attached."}
   } elseif($controllerRows.Count -gt 1){Write-Warning 'Multiple Stadia/Google controller matches; no device attached automatically.'}
   else{Write-Warning 'No Stadia controller identified. Attach it manually if needed.'}
 } else{Write-Warning 'usbipd unavailable; check USB attachment manually.'}
 Write-Host 'WSL input devices:'
-& wsl.exe -d $distro --exec sh -lc 'ls -l /dev/input/js* /dev/input/event* 2>/dev/null || true'
+$wslInputDevices=@(& wsl.exe -d $distro --exec sh -lc 'ls -l /dev/input/js* /dev/input/event* 2>/dev/null || true')
+$wslInputDevices | ForEach-Object {Write-Host $_}
 $dockerPs=& wsl.exe -d $distro --exec bash -lc 'docker ps --format "{{.Names}} {{.Status}}"'
 if($LASTEXITCODE -ne 0){throw 'Could not list containers on the WSL Docker engine.'}
 Write-Host "WSL containers:`n$($dockerPs -join "`n")"
@@ -62,15 +67,40 @@ if($oldExit -eq 0 -and $oldState -eq 'running'){
   Write-Host "Legacy cometbot_dev nodes: $($legacyNodes -join ', ')"
 }
 if($Mode -eq 'Diagnostics'){return}
+if(-not ($wslInputDevices -match '/dev/input/js0')){
+  for($attempt=0;$attempt -lt 10 -and -not ($wslInputDevices -match '/dev/input/js0');$attempt++){
+    Start-Sleep -Seconds 1
+    $wslInputDevices=@(& wsl.exe -d $distro --exec sh -lc 'ls -l /dev/input/js* /dev/input/event* 2>/dev/null || true')
+  }
+  $wslInputDevices | ForEach-Object {Write-Host $_}
+  if(-not ($wslInputDevices -match '/dev/input/js0')){throw 'The Stadia controller is not available as /dev/input/js0 in WSL. Check usbipd attachment before starting teleop.'}
+}
 if($container -eq 'aiaa_rover_dev' -and ($legacyNodes -match '/joy_node' -or $legacyNodes -match '/teleop_publisher')){
   throw 'Legacy teleop is active in cometbot_dev. Run scripts/windows/stop_rover.ps1 -Container cometbot_dev, verify its Joy/teleop nodes exit, then retry.'
 }
-if($targetState -ne 'running'){
+$inputProbe="docker exec $container python3 -c 'import os; paths=[`"/dev/input/js0`",`"/dev/input/event0`"]; fds=[os.open(p,os.O_RDONLY|os.O_NONBLOCK) for p in paths]; [os.close(fd) for fd in fds]'"
+$containerHasJoystick=$false
+if($targetState -eq 'running'){
+  $nodeProcesses=@(& wsl.exe -d $distro --exec docker exec $container ps -eo args=)
+  if($LASTEXITCODE -ne 0){throw "Could not inspect processes in '$container'."}
+  $hasJoy=@($nodeProcesses | Where-Object { $_ -match '(^|[ /])joy_node([ /]|$)' }).Count -gt 0
+  $hasTeleop=@($nodeProcesses | Where-Object { $_ -match '(^|[ /])teleop_publisher([ /]|$)' }).Count -gt 0
+  & wsl.exe -d $distro --exec bash -lc $inputProbe 2>$null
+  $containerHasJoystick=$LASTEXITCODE -eq 0
+  if(-not $containerHasJoystick -and ($hasJoy -or $hasTeleop)){
+    throw "The running '$container' has active teleop nodes but cannot open the input devices. Stop this project's teleop nodes, then rerun Start to recreate the container with the attached controller."
+  }
+}
+if($targetState -ne 'running' -or -not $containerHasJoystick){
   $linuxRepo=(& wsl.exe -d $distro --exec wslpath -a $repo).Trim()
   if($LASTEXITCODE -ne 0){throw 'Could not map the repository path into WSL.'}
-  & wsl.exe -d $distro --exec bash -lc "cd '$linuxRepo' && docker compose -f docker/compose.yaml up -d --build"
+  $recreate=if($targetState -eq 'running'){' --force-recreate'}else{''}
+  & wsl.exe -d $distro --exec bash -lc "cd '$linuxRepo' && docker compose -f docker/compose.yaml up -d --build$recreate"
   if($LASTEXITCODE -ne 0){throw 'Compose build/start failed on the WSL Docker engine.'}
 }
+& wsl.exe -d $distro --exec bash -lc $inputProbe 2>$null
+$containerHasJoystick=$LASTEXITCODE -eq 0
+if(-not $containerHasJoystick){throw "WSL sees the controller, but container '$container' cannot open both /dev/input/js0 and /dev/input/event0. Check the Docker device mappings."}
 $nodeProcesses=@(& wsl.exe -d $distro --exec docker exec $container ps -eo args=)
 if($LASTEXITCODE -ne 0){throw "Could not inspect processes in '$container'."}
 $hasJoy=@($nodeProcesses | Where-Object { $_ -match '(^|[ /])joy_node([ /]|$)' }).Count -gt 0
@@ -104,5 +134,6 @@ if(-not $healthy){throw 'ROS launch did not expose both expected nodes within 20
 & wsl.exe -d $distro --exec docker exec $container bash -lc 'source /opt/ros/humble/setup.bash && source /workspace/install/setup.bash && ros2 topic info /joy && ros2 topic info /cmd_vel'
 $isaacLauncher=Join-Path $PSScriptRoot 'start_isaac_sim.ps1'
 $scene=if($env:ROVER_SCENE){$env:ROVER_SCENE}else{'scenes/CAMERASYNCSSMOETIMES.usd'}
-& $isaacLauncher -Scene $scene
+& $isaacLauncher -Scene $scene -RosDistro 'humble'
 Write-Host 'Startup commands issued. Confirm ROS Bridge and end-to-end command delivery in Isaac Sim.'
+Write-Host 'Open the configured scene and press Play; the rover Action Graph is driven by simulation playback.'

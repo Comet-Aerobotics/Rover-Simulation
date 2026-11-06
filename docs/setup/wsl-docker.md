@@ -4,7 +4,7 @@ The observed ROS container is `cometbot_dev`, ROS Humble with Fast DDS, `ROS_DOM
 
 The Docker CLI in Windows currently points to `desktop-linux` and does not see `cometbot_dev`. Use Docker inside Ubuntu WSL. The supported Windows launcher handles this automatically. For manual commands, map the repo to its `/mnt/<drive>/...` path inside the selected distro, then use `docker compose -f docker/compose.yaml ...` there.
 
-USB controller visibility: `usbipd list` on Windows should show the Stadia device attached to the selected distro; inside WSL inspect `/dev/input/js*` and `/dev/input/event*`. Device visibility in WSL does not guarantee it is mapped into a container. Compose bind-mounts `/dev/input` read-only for Joy input and adds the `input` group.
+USB controller visibility: `usbipd list` on Windows should show the Stadia device attached to the selected distro; inside WSL inspect `/dev/input/js*` and `/dev/input/event*`. Device visibility in WSL does not guarantee it is usable inside a container. Compose bind-mounts `/dev/input` and explicitly grants read access to the joystick and evdev nodes; the supported Start launcher verifies it can open them and recreates a stale container after USB attachment when no teleop nodes are active.
 
 Start mode builds the new image/container only after checking that legacy `/joy_node` and `/teleop_publisher` are no longer active. Then it launches `ros2 launch cometbot_control teleop.launch.py`, which starts `joy_node` and `teleop_publisher`. Inspect with `ros2 node list`, `ros2 topic info /joy`, and `ros2 topic info /cmd_vel`. Do not run a second joystick or teleop node on domain 0 while the legacy stack is active.
 
