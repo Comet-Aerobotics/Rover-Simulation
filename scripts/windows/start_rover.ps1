@@ -27,25 +27,40 @@ if($LASTEXITCODE -ne 0){throw "WSL distro '$distro' could not start."}
 $ctx=& wsl.exe -d $distro --exec bash -lc 'docker context show'
 if($LASTEXITCODE -ne 0){throw "Docker CLI inside WSL distro '$distro' cannot reach its engine."}
 Write-Host "WSL Docker context: $ctx"
-$usbOutput=@(& usbipd.exe list)
-$usbExit=$LASTEXITCODE
-$usbOutput | ForEach-Object {Write-Host $_}
+$usbipdCommand=Get-Command 'usbipd.exe' -ErrorAction SilentlyContinue
+$usbOutput=@()
+$usbExit=1
+if($usbipdCommand){
+  $usbOutput=@(& $usbipdCommand.Path list)
+  $usbExit=$LASTEXITCODE
+  $usbOutput | ForEach-Object {Write-Host $_}
+} else{Write-Host 'usbipd-win is not installed on this computer; checking WSL-visible controllers only.'}
 if($usbExit -eq 0){
-  $controllerRows=@($usbOutput | Where-Object { $_ -match '(?i)stadia|google.*controller' -and $_ -match '^\s*\d+-\d+' })
-  if($controllerRows.Count -eq 1){
-    $busid=[regex]::Match($controllerRows[0],'^\s*(\d+-\d+)').Groups[1].Value
-    if($controllerRows[0] -notmatch '(?i)attached'){
-      Write-Host "Attaching identified controller $busid to WSL"
+  $controllerRows=@($usbOutput | Where-Object { $_ -match '(?i)controller|gamepad|game pad|joystick|joy-con|dualshock|dualsense|stadia|xbox' -and $_ -match '^\s*\d+-\d+' })
+  if($controllerRows.Count -gt 0){
+    $selectedUsbRow=$controllerRows[0]
+    if($controllerRows.Count -gt 1 -and $Mode -eq 'Start'){
+      Write-Host 'USB controllers available on this Windows computer:'
+      for($i=0;$i -lt $controllerRows.Count;$i++){Write-Host "  [$($i+1)] $($controllerRows[$i].Trim())"}
+      $usbChoice=Read-Host 'Choose a controller to attach to WSL (Enter for 1)'
+      if([string]::IsNullOrWhiteSpace($usbChoice)){$usbChoice='1'}
+      if($usbChoice -notmatch '^\d+$' -or [int]$usbChoice -lt 1 -or [int]$usbChoice -gt $controllerRows.Count){throw 'Invalid controller selection.'}
+      $selectedUsbRow=$controllerRows[[int]$usbChoice-1]
+    }
+    $busid=[regex]::Match($selectedUsbRow,'^\s*(\d+-\d+)').Groups[1].Value
+    if($selectedUsbRow -notmatch '(?i)attached'){
+      Write-Host "Attaching selected controller $busid to WSL"
       & usbipd.exe attach --wsl --busid $busid
       if($LASTEXITCODE -ne 0){throw "Could not attach controller $busid to WSL."}
     }
-    else{Write-Host "Controller $busid is already attached."}
-  } elseif($controllerRows.Count -gt 1){Write-Warning 'Multiple Stadia/Google controller matches; no device attached automatically.'}
-  else{Write-Warning 'No Stadia controller identified. Attach it manually if needed.'}
-} else{Write-Warning 'usbipd unavailable; check USB attachment manually.'}
-Write-Host 'WSL input devices:'
-$wslInputDevices=@(& wsl.exe -d $distro --exec sh -lc 'ls -l /dev/input/js* /dev/input/event* 2>/dev/null || true')
-$wslInputDevices | ForEach-Object {Write-Host $_}
+    else{Write-Host "Controller $busid is already attached to WSL."}
+  } else{Write-Host 'No controller on this Windows computer; checking WSL for local or USB-over-IP controllers.'}
+} elseif($usbipdCommand){Write-Warning 'usbipd list failed; check USB attachment manually.'}
+$listJoysticks='for j in /dev/input/js[0-9]*; do [ -e "$j" ] || continue; n=${j##*js}; name=$(cat "/sys/class/input/js${n}/device/name" 2>/dev/null || printf "Unknown controller"); printf "%s\t%s\n" "$j" "$name"; done'
+$wslJoystickRows=@(& wsl.exe -d $distro --exec bash -lc $listJoysticks)
+if($LASTEXITCODE -ne 0){throw 'Could not enumerate joystick devices in WSL.'}
+Write-Host 'Controllers visible to WSL (including USB-over-IP devices):'
+if($wslJoystickRows.Count -eq 0){Write-Host '  None detected.'}else{$wslJoystickRows | ForEach-Object {Write-Host "  $_"}}
 $dockerPs=& wsl.exe -d $distro --exec bash -lc 'docker ps --format "{{.Names}} {{.Status}}"'
 if($LASTEXITCODE -ne 0){throw 'Could not list containers on the WSL Docker engine.'}
 Write-Host "WSL containers:`n$($dockerPs -join "`n")"
@@ -67,18 +82,36 @@ if($oldExit -eq 0 -and $oldState -eq 'running'){
   Write-Host "Legacy cometbot_dev nodes: $($legacyNodes -join ', ')"
 }
 if($Mode -eq 'Diagnostics'){return}
-if(-not ($wslInputDevices -match '/dev/input/js0')){
-  for($attempt=0;$attempt -lt 10 -and -not ($wslInputDevices -match '/dev/input/js0');$attempt++){
-    Start-Sleep -Seconds 1
-    $wslInputDevices=@(& wsl.exe -d $distro --exec sh -lc 'ls -l /dev/input/js* /dev/input/event* 2>/dev/null || true')
+for($attempt=0;$attempt -lt 10 -and $wslJoystickRows.Count -eq 0;$attempt++){
+  Start-Sleep -Seconds 1
+  $wslJoystickRows=@(& wsl.exe -d $distro --exec bash -lc $listJoysticks)
+}
+if($wslJoystickRows.Count -eq 0){throw 'No controller is visible in WSL. Attach the local controller with usbipd or connect the remote USB-over-IP device into WSL, then retry.'}
+$joysticks=@($wslJoystickRows | ForEach-Object {
+  if($_ -match '^(?<path>/dev/input/js(?<id>\d+))\s+(?<name>.*)$'){
+    [pscustomobject]@{Path=$matches.path;Id=[int]$matches.id;Name=$matches.name.Trim()}
   }
-  $wslInputDevices | ForEach-Object {Write-Host $_}
-  if(-not ($wslInputDevices -match '/dev/input/js0')){throw 'The Stadia controller is not available as /dev/input/js0 in WSL. Check usbipd attachment before starting teleop.'}
+} | Where-Object {$_})
+if($joysticks.Count -eq 0){throw 'WSL reported input devices, but no usable joystick device names could be parsed.'}
+$selectedJoystick=$joysticks[0]
+if($joysticks.Count -gt 1){
+  Write-Host 'Multiple controllers are available:'
+  for($i=0;$i -lt $joysticks.Count;$i++){Write-Host "  [$($i+1)] $($joysticks[$i].Name) ($($joysticks[$i].Path))"}
+  $choice=Read-Host 'Choose the controller for rover teleoperation'
+  if($choice -notmatch '^\d+$' -or [int]$choice -lt 1 -or [int]$choice -gt $joysticks.Count){throw 'Invalid controller selection.'}
+  $selectedJoystick=$joysticks[[int]$choice-1]
+} else{Write-Host "Using $($selectedJoystick.Name) ($($selectedJoystick.Path))."}
+$selectedDevice=$selectedJoystick.Path
+$selectedDeviceId=$selectedJoystick.Id
+Write-Host "Selected controller: $($selectedJoystick.Name) at $selectedDevice (joy device ID $selectedDeviceId)."
+if(-not ($selectedDevice -match '^/dev/input/js\d+$')){
+  throw "Unexpected joystick device path '$selectedDevice'."
 }
 if($container -eq 'aiaa_rover_dev' -and ($legacyNodes -match '/joy_node' -or $legacyNodes -match '/teleop_publisher')){
   throw 'Legacy teleop is active in cometbot_dev. Run scripts/windows/stop_rover.ps1 -Container cometbot_dev, verify its Joy/teleop nodes exit, then retry.'
 }
-$inputProbe="docker exec $container python3 -c 'import os; paths=[`"/dev/input/js0`",`"/dev/input/event0`"]; fds=[os.open(p,os.O_RDONLY|os.O_NONBLOCK) for p in paths]; [os.close(fd) for fd in fds]'"
+$inputProbe='docker exec CONTAINER python3 -c "import os; p=''jsN''; fd=os.open(p,os.O_RDONLY|os.O_NONBLOCK); os.close(fd)"'
+$inputProbe=$inputProbe.Replace('CONTAINER',$container).Replace('jsN',$selectedDevice)
 $containerHasJoystick=$false
 if($targetState -eq 'running'){
   $nodeProcesses=@(& wsl.exe -d $distro --exec docker exec $container ps -eo args=)
@@ -95,12 +128,12 @@ if($targetState -ne 'running' -or -not $containerHasJoystick){
   $linuxRepo=(& wsl.exe -d $distro --exec wslpath -a $repo).Trim()
   if($LASTEXITCODE -ne 0){throw 'Could not map the repository path into WSL.'}
   $recreate=if($targetState -eq 'running'){' --force-recreate'}else{''}
-  & wsl.exe -d $distro --exec bash -lc "cd '$linuxRepo' && docker compose -f docker/compose.yaml up -d --build$recreate"
+  & wsl.exe -d $distro --exec bash -lc "cd '$linuxRepo' && ROVER_JOYSTICK_DEVICE='$selectedDevice' docker compose -f docker/compose.yaml up -d --build$recreate"
   if($LASTEXITCODE -ne 0){throw 'Compose build/start failed on the WSL Docker engine.'}
 }
 & wsl.exe -d $distro --exec bash -lc $inputProbe 2>$null
 $containerHasJoystick=$LASTEXITCODE -eq 0
-if(-not $containerHasJoystick){throw "WSL sees the controller, but container '$container' cannot open both /dev/input/js0 and /dev/input/event0. Check the Docker device mappings."}
+if(-not $containerHasJoystick){throw "WSL sees the controller at $selectedDevice, but container '$container' cannot open it. Check the Docker device mapping."}
 $nodeProcesses=@(& wsl.exe -d $distro --exec docker exec $container ps -eo args=)
 if($LASTEXITCODE -ne 0){throw "Could not inspect processes in '$container'."}
 $hasJoy=@($nodeProcesses | Where-Object { $_ -match '(^|[ /])joy_node([ /]|$)' }).Count -gt 0
@@ -111,7 +144,7 @@ if($hasJoy -and $hasTeleop){
   throw "Partial ROS teleoperation is already running in '$container'; resolve it before starting another launch."
 } else {
   $teleopCommand='source /opt/ros/humble/setup.bash && source /workspace/install/setup.bash && ros2 launch cometbot_control teleop.launch.py > /tmp/aiaa_rover_teleop.log 2>&1'
-  & wsl.exe -d $distro --exec docker exec -d $container bash -lc $teleopCommand
+  & wsl.exe -d $distro --exec docker exec -d -e "ROVER_JOY_DEVICE_ID=$selectedDeviceId" $container bash -lc $teleopCommand
   if($LASTEXITCODE -ne 0){throw 'Could not start the ROS teleoperation launch in the rover container.'}
 }
 $monitor="docker exec -it $container bash -lc 'source /opt/ros/humble/setup.bash && source /workspace/install/setup.bash && ros2 topic echo /joy'"

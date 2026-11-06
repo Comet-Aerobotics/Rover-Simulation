@@ -19,8 +19,7 @@ services:
       - ../config:/opt/rover/config:ro
       - /dev/input:/dev/input:ro
     devices:
-      - /dev/input/js0:/dev/input/js0:r
-      - /dev/input/event0:/dev/input/event0:r
+      - ${ROVER_JOYSTICK_DEVICE:-/dev/input/js0}:${ROVER_JOYSTICK_DEVICE:-/dev/input/js0}:r
     group_add:
       - ${INPUT_GID:-995}
     stdin_open: true
