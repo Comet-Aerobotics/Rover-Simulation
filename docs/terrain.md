@@ -40,7 +40,7 @@ The builder refuses to overwrite an existing candidate unless passed `--overwrit
 ./scripts/windows/start_rover_all.ps1 -SandDeformation
 ```
 
-Once the scene opens, press Play and drive normally. Sand edits exist in the open stage; save the candidate scene if the ruts should persist. To reset the surface, close the candidate and rerun the builder with `--overwrite`. The original 55 kg scene and canonical scene are not changed by the builder.
+The sand runtime is currently experimental and **not suitable for powered driving**. A headless ROS test found that its full visual-mesh updates stop rover travel and substantially reduce RGB/depth delivery; see `docs/performance-analysis.md`. Use the generated scene for inspection and isolated testing only until the visual-update path is replaced and driving/sensor acceptance passes. Sand edits exist in the open stage; save the candidate scene if the ruts should persist. To reset the surface, close the candidate and rerun the builder with `--overwrite`. The original 55 kg scene and canonical scene are not changed by the builder.
 
 For an offline replay, use a CSV with columns `time_s,wheel,x_m,y_m,center_height_m,heading_rad,ground_speed_m_s,spin_rad_s,normal_load_n`. Positions and heights are in the terrain mesh's local frame and SI units. Each wheel needs an initial row and later rows with increasing times; only later rows stamp the path. The generator uses the same soil model as the runtime:
 

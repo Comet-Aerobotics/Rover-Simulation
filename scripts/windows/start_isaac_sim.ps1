@@ -103,7 +103,10 @@ $sandEnabled = $SandDeformation -or $env:ROVER_SAND_DEFORMATION -eq '1'
 $env:AIAA_ROVER_SAND_DEFORMATION = if ($sandEnabled) { '1' } else { '0' }
 Write-Host "Launching Isaac Sim with ROS $RosDistro / Fast DDS / domain $env:ROS_DOMAIN_ID" -ForegroundColor Cyan
 Write-Host "Opening scene: $Scene"
-if ($sandEnabled) { Write-Host 'Wheel-driven sand deformation enabled.' -ForegroundColor Cyan }
+if ($sandEnabled) {
+    Write-Host 'Wheel-driven sand deformation enabled.' -ForegroundColor Cyan
+    Write-Warning 'Sand mode is experimental: live visual terrain updates currently stall powered rover travel and reduce camera output. See docs/performance-analysis.md.'
+}
 try {
     # Kit's --exec file parser splits paths at spaces even when quoted. The
     # no-space junction keeps the project itself in its original location.
