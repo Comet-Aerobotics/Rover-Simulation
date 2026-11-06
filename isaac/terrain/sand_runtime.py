@@ -2,8 +2,8 @@
 
 Call ``start(stage)`` after opening a scene made by terrain/build_sand_scene.py.
 All USD edits happen from the Kit update thread between physics steps. Only
-tiles touched by the wheels are rebuilt; the rendered mesh shares the same
-height grid. The soil model is empirical and requires site calibration.
+tiles touched by the wheels are rebuilt; each tile supplies rendering and
+collision. The soil model is empirical and requires site calibration.
 """
 from __future__ import annotations
 
@@ -52,6 +52,8 @@ class SandRuntime:
             raise RuntimeError("The open stage has no sand collision tiles; build the sand candidate first")
         if UsdPhysics.CollisionAPI(self.mesh.GetPrim()).GetCollisionEnabledAttr().Get() is not False:
             raise RuntimeError("The original full-size terrain collider is still enabled")
+        if self.tile_root.GetCustomDataByKey("sand:representation") != "visible_collision_tiles_v1":
+            raise RuntimeError("Sand scene needs rebuilding with visible collision tiles")
         height = int(self.tile_root.GetCustomDataByKey("sand:gridHeight"))
         width = int(self.tile_root.GetCustomDataByKey("sand:gridWidth"))
         if int(self.tile_root.GetCustomDataByKey("sand:tileCells")) != self.tile_cells:
@@ -68,11 +70,16 @@ class SandRuntime:
             col0 = int(prim.GetCustomDataByKey("sand:col0"))
             col1 = int(prim.GetCustomDataByKey("sand:col1"))
             tile = UsdGeom.Mesh(prim)
+            saved_points = _numpy(tile.GetPointsAttr().Get()).reshape(row1 - row0 + 1, col1 - col0 + 1, 3)
+            # The original terrain points retain the undeformed DEM. Saved
+            # tile points restore any ruts when a sand scene is reopened.
+            self.field.height[row0:row1 + 1, col0:col1 + 1] = saved_points[:, :, 2]
             self.tile_info[str(prim.GetPath())] = (
                 row0, row1, col0, col1,
                 tile.GetFaceVertexCountsAttr().Get(),
                 tile.GetFaceVertexIndicesAttr().Get(),
             )
+        self.points[:, :, 2] = self.field.height
         self.inverse = UsdGeom.Xformable(self.mesh.GetPrim()).ComputeLocalToWorldTransform(
             Usd.TimeCode.Default()).GetInverse()
         base = stage.GetPrimAtPath("/jackal/base_link")
@@ -196,12 +203,12 @@ class SandRuntime:
             self._sync(dirty)
 
     def _sync(self, dirty: DirtyRegion):
+        self.points[:, :, 2] = self.field.height
+        self._sync_tiles(dirty)
+
+    def _sync_tiles(self, dirty: DirtyRegion):
         from pxr import UsdGeom, UsdPhysics, Vt
 
-        self.points[:, :, 2] = self.field.height
-        # The original mesh has no collider, so this large visual update does
-        # not recook the full 1.3-million-triangle ground.
-        self.mesh.GetPointsAttr().Set(Vt.Vec3fArray.FromNumpy(self.points.reshape(-1, 3)))
         count = 0
         for path, (row0, row1, col0, col1, counts, indices) in self.tile_info.items():
             if row1 < dirty.row_min or row0 > dirty.row_max or col1 < dirty.col_min or col0 > dirty.col_max:
@@ -214,7 +221,9 @@ class SandRuntime:
             tile.CreatePointsAttr(Vt.Vec3fArray.FromNumpy(tile_points))
             tile.CreateFaceVertexCountsAttr(counts)
             tile.CreateFaceVertexIndicesAttr(indices)
-            tile.CreateVisibilityAttr(UsdGeom.Tokens.invisible)
+            tile.CreateVisibilityAttr(UsdGeom.Tokens.inherited)
+            tile.CreateSubdivisionSchemeAttr(UsdGeom.Tokens.none)
+            tile.CreateExtentAttr(Vt.Vec3fArray.FromNumpy(np.array((tile_points.min(axis=0), tile_points.max(axis=0)), dtype=np.float32)))
             tile.GetPrim().SetCustomDataByKey("sand:row0", row0)
             tile.GetPrim().SetCustomDataByKey("sand:row1", row1)
             tile.GetPrim().SetCustomDataByKey("sand:col0", col0)

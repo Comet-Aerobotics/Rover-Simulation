@@ -1,8 +1,8 @@
-"""Build an opt-in scene with small collision tiles for live wheel ruts.
+"""Build an opt-in scene with local visual and collision tiles for live ruts.
 
-The original terrain mesh remains the sole rendered surface. Its collision is
-disabled and replaced by non-rendered, static triangle-mesh tiles with exactly
-the same initial vertices. The source scene is never modified.
+The original terrain points remain as the undeformed height grid. Its faces
+and collider are disabled; small visible triangle-mesh tiles replace both.
+The source scene is never modified.
 """
 from __future__ import annotations
 
@@ -84,7 +84,12 @@ def build(source: Path = DEFAULT_SOURCE, output: Path = DEFAULT_OUTPUT,
     if not collision:
         raise RuntimeError("Source terrain has no CollisionAPI")
     collision.GetCollisionEnabledAttr().Set(False)
+    # Large visual mesh writes stop camera output and rover motion in Isaac.
+    # Keep its points as the baseline grid, and render local tiles instead.
+    mesh.GetFaceVertexCountsAttr().Set(Vt.IntArray())
+    mesh.GetFaceVertexIndicesAttr().Set(Vt.IntArray())
     root = UsdGeom.Xform.Define(stage, TILE_ROOT).GetPrim()
+    root.SetCustomDataByKey("sand:representation", "visible_collision_tiles_v1")
     root.SetCustomDataByKey("sand:gridHeight", height)
     root.SetCustomDataByKey("sand:gridWidth", width)
     root.SetCustomDataByKey("sand:tileCells", cells)
@@ -98,7 +103,9 @@ def build(source: Path = DEFAULT_SOURCE, output: Path = DEFAULT_OUTPUT,
         tile.CreatePointsAttr(Vt.Vec3fArray.FromNumpy(tile_points))
         tile.CreateFaceVertexCountsAttr(Vt.IntArray.FromNumpy(counts))
         tile.CreateFaceVertexIndicesAttr(Vt.IntArray.FromNumpy(indices))
-        tile.CreateVisibilityAttr(UsdGeom.Tokens.invisible)
+        tile.CreateVisibilityAttr(UsdGeom.Tokens.inherited)
+        tile.CreateSubdivisionSchemeAttr(UsdGeom.Tokens.none)
+        tile.CreateExtentAttr(Vt.Vec3fArray.FromNumpy(np.array((tile_points.min(axis=0), tile_points.max(axis=0)), dtype=np.float32)))
         tile.GetPrim().SetCustomDataByKey("sand:row0", row0)
         tile.GetPrim().SetCustomDataByKey("sand:row1", row1)
         tile.GetPrim().SetCustomDataByKey("sand:col0", col0)
@@ -107,7 +114,7 @@ def build(source: Path = DEFAULT_SOURCE, output: Path = DEFAULT_OUTPUT,
         UsdPhysics.MeshCollisionAPI.Apply(tile.GetPrim()).CreateApproximationAttr("none")
         tile_count += 1
     stage.GetRootLayer().Save()
-    print(f"Built {output} with {tile_count} sand collision tiles; original terrain collider disabled")
+    print(f"Built {output} with {tile_count} visible sand collision tiles; original terrain faces and collider disabled")
     return output
 
 

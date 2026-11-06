@@ -22,7 +22,7 @@ The canonical composed stage retains a source opinion for `/World/Lab/Lab/Curved
 
 ## Wheel-driven sand ruts (opt in)
 
-The sand candidate starts from `scenes/in work/CAMERASYNCSSMOETIMES_55KG_CANDIDATE.usd`. Its visible terrain is still one mesh, but its large collider is disabled and replaced with 176 invisible static triangle-mesh tiles. The runtime samples each wheel's position, heading, angular speed, travel speed, and the nearest physics surface. A bounded empirical soil model lowers the terrain beneath loaded wheels and builds small side berms. Changed visual vertices and collision tiles are updated together, so the rover can sink into the rut. Rocks remain rigid, and a wheel whose nearest surface is a rock does not stamp sand.
+The sand candidate starts from `scenes/in work/CAMERASYNCSSMOETIMES_55KG_CANDIDATE.usd`. It retains the original terrain's 650,000 points as an undeformed height reference, removes that mesh's faces, and disables its collider. In its place, 176 visible static triangle-mesh tiles supply both rendering and collision. The runtime samples each wheel's position, heading, angular speed, travel speed, and the nearest physics surface. A bounded empirical soil model lowers the terrain beneath loaded wheels and builds small side berms. Only touched tiles are rebuilt, so the visible ground and rover contact follow the same rut. Rocks remain rigid, and a wheel whose nearest surface is a rock does not stamp sand.
 
 The current normal load is the 55 kg rover's weight divided equally among four wheels. It is an estimate; suspension load transfer, soil shear, rolling resistance, and individual grains are not modeled. The values in `config/terrain.yaml` are provisional and should be calibrated against wheel sinkage and traction measurements from the intended sand. The model limits rut depth to 6 cm. The update interval is 0.2 s and tiles span 64 grid cells; adjust these only after checking runtime cost and collision behavior.
 
@@ -34,13 +34,13 @@ $isaacPython = 'C:\isaac-sim\_build\windows-x86_64\release\python.bat'
 & $isaacPython terrain/validate_sand_scene.py
 ```
 
-The builder refuses to overwrite an existing candidate unless passed `--overwrite`. The generated scene is ignored by Git. Save and close any existing Isaac Sim scene before launching this candidate; the launcher will leave an already running Isaac Sim process untouched.
+The builder refuses to overwrite an existing candidate unless passed `--overwrite`. Existing sand candidates built with the older full-mesh visual path must be rebuilt. The generated scene is ignored by Git. Save and close any existing Isaac Sim scene before launching this candidate; the launcher will leave an already running Isaac Sim process untouched.
 
 ```powershell
 ./scripts/windows/start_rover_all.ps1 -SandDeformation
 ```
 
-The sand runtime is currently experimental and **not suitable for powered driving**. A headless ROS test found that its full visual-mesh updates stop rover travel and substantially reduce RGB/depth delivery; see `docs/performance-analysis.md`. Use the generated scene for inspection and isolated testing only until the visual-update path is replaced and driving/sensor acceptance passes. Sand edits exist in the open stage; save the candidate scene if the ruts should persist. To reset the surface, close the candidate and rerun the builder with `--overwrite`. The original 55 kg scene and canonical scene are not changed by the builder.
+The tile update path passed isolated headless ROS driving and RGB/depth/scan delivery under both CPU and GPU physics; see `docs/performance-analysis.md`. Controller handling and visible rut quality in the GUI still need an operator check. Sand edits exist in the open stage; save the candidate scene if the ruts should persist. On reopening, the runtime restores rut heights from the saved tiles while keeping the original points as the undeformed reference. To reset the surface, close the candidate and rerun the builder with `--overwrite`. The original 55 kg scene and canonical scene are not changed by the builder.
 
 For an offline replay, use a CSV with columns `time_s,wheel,x_m,y_m,center_height_m,heading_rad,ground_speed_m_s,spin_rad_s,normal_load_n`. Positions and heights are in the terrain mesh's local frame and SI units. Each wheel needs an initial row and later rows with increasing times; only later rows stamp the path. The generator uses the same soil model as the runtime:
 

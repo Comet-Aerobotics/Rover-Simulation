@@ -105,7 +105,6 @@ Write-Host "Launching Isaac Sim with ROS $RosDistro / Fast DDS / domain $env:ROS
 Write-Host "Opening scene: $Scene"
 if ($sandEnabled) {
     Write-Host 'Wheel-driven sand deformation enabled.' -ForegroundColor Cyan
-    Write-Warning 'Sand mode is experimental: live visual terrain updates currently stall powered rover travel and reduce camera output. See docs/performance-analysis.md.'
 }
 try {
     # Kit's --exec file parser splits paths at spaces even when quoted. The

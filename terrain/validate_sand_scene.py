@@ -1,4 +1,4 @@
-"""Read-only check that the sand scene's visual surface matches its colliders."""
+"""Read-only check that visible sand tiles match collision and height bounds."""
 from __future__ import annotations
 
 import argparse
@@ -34,7 +34,12 @@ def validate(scene: Path) -> list[str]:
     points = points.reshape(height, width, 3)
     if UsdPhysics.CollisionAPI(mesh.GetPrim()).GetCollisionEnabledAttr().Get() is not False:
         problems.append("Full visual mesh collider must be disabled")
+    if len(mesh.GetFaceVertexCountsAttr().Get()) or len(mesh.GetFaceVertexIndicesAttr().Get()):
+        problems.append("Original terrain faces must be removed so tiled ruts are visible")
+    if root.GetCustomDataByKey("sand:representation") != "visible_collision_tiles_v1":
+        problems.append("Sand tile representation is outdated")
     expected = list(tile_bounds(height, width, cells))
+    tiled_height = np.full((height, width), np.nan, dtype=np.float32)
     if len(root.GetChildren()) != len(expected):
         problems.append(f"Expected {len(expected)} collision tiles, found {len(root.GetChildren())}")
     for row0, row1, col0, col1 in expected:
@@ -45,8 +50,18 @@ def validate(scene: Path) -> list[str]:
             continue
         tile_points = np.asarray(tile.GetPointsAttr().Get(), dtype=np.float32)
         expected_points = points[row0:row1 + 1, col0:col1 + 1].reshape(-1, 3)
-        if tile_points.shape != expected_points.shape or not np.allclose(tile_points, expected_points):
-            problems.append(f"Tile surface differs from rendered surface: {path}")
+        if tile_points.shape != expected_points.shape:
+            problems.append(f"Tile has wrong point count: {path}")
+            continue
+        if not np.allclose(tile_points[:, :2], expected_points[:, :2]):
+            problems.append(f"Tile XY grid differs from terrain: {path}")
+        local_height = tile_points[:, 2].reshape(row1 - row0 + 1, col1 - col0 + 1)
+        prior = tiled_height[row0:row1 + 1, col0:col1 + 1]
+        if np.any(np.isfinite(prior) & (np.abs(prior - local_height) > 1e-4)):
+            problems.append(f"Tile boundary height mismatch: {path}")
+        prior[:] = local_height
+        if tile.GetVisibilityAttr().Get() != UsdGeom.Tokens.inherited:
+            problems.append(f"Tile is not visible: {path}")
         prim = tile.GetPrim()
         if not prim.HasAPI(UsdPhysics.CollisionAPI) or prim.GetAttribute("physics:collisionEnabled").Get() is not True:
             problems.append(f"Tile collision is disabled: {path}")
@@ -54,7 +69,16 @@ def validate(scene: Path) -> list[str]:
             problems.append(f"Tile is not a triangle mesh collider: {path}")
         if prim.HasAPI(UsdPhysics.RigidBodyAPI):
             problems.append(f"Tile is not static: {path}")
-    print(f"Scene: {scene}\nVisual points={height * width}; collision tiles={len(expected)}")
+    if np.any(~np.isfinite(tiled_height)):
+        problems.append("Tiles leave gaps in the terrain grid")
+    else:
+        difference = tiled_height - points[:, :, 2]
+        soil = cfg["deformation"]
+        if float(difference.min()) < -float(soil["maximum_sinkage_m"]) - 1e-3:
+            problems.append("Sand rut exceeds configured maximum sinkage")
+        if float(difference.max()) > float(soil["maximum_berm_m"]) + 1e-3:
+            problems.append("Sand berm exceeds configured maximum height")
+    print(f"Scene: {scene}\nVisual/collision tiles={len(expected)}; baseline points={height * width}")
     return problems
 
 

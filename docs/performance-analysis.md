@@ -44,28 +44,28 @@ With only one drive graph active, the full 1 cm terrain collider measured 79.4 m
 
 The visible 1 cm terrain mesh was unchanged in these proxy tests. A 10 cm collision grid is coarse relative to the 9.8 cm wheel radius and requires traction, obstacle, sinkage, and slope acceptance before use. Built-in `meshSimplification` measured 72.8 ms, similar to the 2 cm proxy. CPU physics offers a larger gain without lowering ground resolution.
 
-## Sand-mode finding
+## Sand-mode finding and repair
 
-On the opt-in tiled sand scene, CPU physics preserved live rut creation: a 240-frame headless run rebuilt 20 collision tiles and reached 2.8 cm maximum rut depth. Without ROS, its mean frame time was 22.7 ms versus 22.2 ms with static tiles. These are not directly comparable to the rigid scene because the saved viewport poses differ. **That stationary benchmark missed a driving failure:** with the ROS bridge enabled and a 0.5 m/s Twist command for three simulated seconds, the static tiled scene moved 1.03 m, the rut model with USD synchronization disabled moved 1.17 m, but the full rut runtime moved only 0.0085 m. A visual-mesh-only update yielded zero measured chassis travel. This points to live writes of the parent terrain mesh as the trigger; the exact PhysX invalidation path still needs tracing.
+The original sand scene rendered one 650,000-point terrain mesh while updating small collision tiles. A stationary rut benchmark missed a driving failure. With the ROS bridge enabled and a 0.5 m/s Twist command for three simulated seconds, static sand tiles moved the rover 1.03 m, but the full rut runtime moved it only 0.0085 m. A visual-only full-mesh update yielded zero measured travel. At a 10 Hz OAK rate over four simulated seconds, RGB/depth delivery fell from 38 pairs with static tiles to 5–6 pairs with full-mesh updates. Updating only the small collision tiles preserved 0.92 m travel, 38 RGB/depth pairs, 81 scans, and a 2.8 cm rut. This isolated the regression to the large rendered-mesh write; the exact renderer or physics invalidation mechanism remains unprofiled.
 
-With the ROS bridge and a 10 Hz OAK camera, a separate camera-message ablation exposed a problem in the current sand runtime:
+The repaired builder removes the original mesh faces but keeps its points as the undeformed reference. It renders the same 176 small tiles used for collision and updates only touched tiles. Isolated headless ROS results with a 0.5 m/s command for three simulated seconds were:
 
-| Sand scene, four simulated seconds | RGB/depth pairs received |
-| --- | ---: |
-| Static sand tiles | 38 |
-| Rut model running, USD mesh synchronization disabled | 38 |
-| Rut model updating the full visual terrain mesh every 0.2 s | 5 |
-| Full visual and collision synchronization | 6 |
-| Visual updates every 1.0 s | 19 |
+| Sand scene, 10 Hz OAK | CPU dynamics + MBP | GPU dynamics + GPU broadphase |
+| --- | ---: | ---: |
+| Rover travel | 0.91–0.93 m | 1.07 m |
+| RGB/depth pairs | 38 | 38 |
+| Laser scans | 81 | 81 |
+| Maximum rut depth | 2.8–2.9 cm | 3.0 cm |
+| Mean headless frame time | 24.1–24.2 ms | 79.3 ms |
 
-The full-mesh `points` write of 650,000 vertices every 0.2 s is the trigger for both the driving failure and camera drop in these tests; collision tile updates were not needed to reproduce either. Laser scans continued. Render-product and physics scene invalidation after the large USD mesh edit is a working hypothesis, not yet a profiled mechanism. A trial that updated a separate tiny visual mesh crashed during Kit startup and yielded no usable result. The current sand runtime must be treated as unsuitable for rover driving until the visual-update path is redesigned and retested. Local visual tiles or renderer-side displacement are candidates; updating less often only partially restored camera delivery and would add visible lag.
+A captured 640×400 RGB frame contained terrain imagery, and a runtime restart reconstructed the rutted height grid from tile geometry with zero measured height difference. These tests do not establish visual rut quality or controller feel in the GUI. The GUI remained open during the headless tests, and CPU/GPU travel differences include physics-setting and startup effects; they are not a soil calibration result.
 
 ## Recommendations
 
 1. **First trial: CPU physics + MBP broadphase in a separate scene candidate.** Keep the original scene. Validate controller steering, wheel contact, `/scan`, RGB/depth, and TF in the GUI before promotion. NVIDIA [recommends CPU simulation for scenes with a few rigid bodies or articulations](https://docs.omniverse.nvidia.com/kit/docs/omni_physics/110.0/dev_guide/guides/physics-performance.html). This recommendation would need revisiting if GPU-only grains, deformables, or particles replace the empirical sand model.
 2. **Set an OAK sensor tick rate according to the required perception rate.** The measured 10 Hz setting retained RGB/depth publication and reduced frame time. Isaac Sim 6.x [uses `OmniSensorAPI` tick rates](https://docs.isaacsim.omniverse.nvidia.com/latest/sensors/isaacsim_sensors_multitick_rendering.html); the older helper `frameSkipCount` is deprecated in the [ROS 2 sensor migration guide](https://docs.isaacsim.omniverse.nvidia.com/latest/migration_guides/isaac_sim_6_0/ros2_sensor_graph_migration.html). Confirm image content and timestamp cadence with the downstream stack.
 3. **Use a smaller operator viewport if visual detail permits.** The 960×540 trial was a useful compromise. Keep the OAK render product's 640×400 resolution independent of viewport size.
-4. **Fix sand visual synchronization before driving on sand.** Preserve the colliding rut behavior while avoiding a full terrain-mesh points write every 0.2 s. Re-test powered travel, ROS image cadence, and camera content afterward.
+4. **Check sand handling and rut appearance in the GUI.** The local tile repair passed powered ROS travel and sensor cadence in headless runs. Soil coefficients and nominal wheel loads still need measurements from the intended sand.
 5. **Defer collider simplification until after CPU physics acceptance.** It trades terrain fidelity for smaller gains in the GPU trials. Keep lidar enabled; its sensor/graph ablation did not improve headless throughput. Remove the duplicate drive graph only after identifying which one supplies the proven controller path; the duplicate is a correctness concern more than the principal FPS cause.
 6. **Profile the actual GUI after applying one change at a time.** NVIDIA's [Tracy guide](https://docs.isaacsim.omniverse.nvidia.com/latest/utilities/debugging/profiling_performance.html) distinguishes physics steps, graph execution, and GPU render waits. The live window could not be instrumented here because Computer Use access was denied.
 
