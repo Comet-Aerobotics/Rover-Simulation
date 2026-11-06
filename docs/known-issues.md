@@ -2,6 +2,7 @@
 
 ## Open
 
+- The repaired camera pose and added RGB publisher have passed structural checks only. Confirm the camera view, mount placement, image and camera-info messages, and cross-host delivery in Isaac Sim before treating the feed as working. The camera's physical calibration is not yet verified.
 - Windows Isaac Sim ↔ WSL Docker DDS discovery and `/cmd_vel` delivery are not end-to-end verified. Existing topic and node presence does not prove it.
 - Current cross-host probes saw no matching subscription using multicast or a static peer to the WSL host. Windows inbound firewall policy is `BlockInbound` and local rules are GPO-managed; this is a plausible discovery barrier, not a confirmed cause. No firewall settings were changed.
 - USB attachment and idle Joy were observed, but nonzero Stadia input mapping is not validated.

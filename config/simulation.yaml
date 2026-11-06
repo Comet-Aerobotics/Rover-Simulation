@@ -19,8 +19,10 @@ robot:
   wheel_separation_m: 0.3755
   estimated_total_mass_kg: 55.0
 sensors:
-  oak_camera_prim: /World/DM9098Pro_enclosure/OAK_D_Pro_RGB
+  oak_camera_prim: /jackal/base_link/DM9098Pro_enclosure/OAK_D_Pro_RGB
   oak_frame_id: oak_d_optical_frame
+  rgb_topic: /oak_d/rgb/image_raw
+  rgb_camera_info_topic: /oak_d/rgb/camera_info
   depth_topic: /oak_d/depth
   camera_info_topic: oak_d/camera_info
   render_width: 640
