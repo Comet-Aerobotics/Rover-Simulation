@@ -37,15 +37,24 @@ sequenceDiagram
 ## Setup Guide
 
 ### 1. Set Up Local Inference (`llama.cpp` or LM Studio)
-The harness works with any OpenAI-compliant local server:
+The harness works with any OpenAI-compliant local server. It is optimized for open-weights models running within a **16GB VRAM** workstation budget (e.g. NVIDIA RTX A4000), leaving ample headroom for Isaac Sim's GPU PhysX dynamics and RTX viewport:
 
-* **Option A: `llama.cpp` (CLI / Headless):**
-  ```bash
-  llama-server -m models/Meta-Llama-3-8B-Instruct.Q4_K_M.gguf --port 8080 -ngl 99
-  ```
-  Serves at `http://127.0.0.1:8080/v1`.
-* **Option B: LM Studio (GUI):**
-  Load your model (e.g. Qwen 2.5 / 3.x or Llama 3), configure the `mcp/isaac-sim` tool server, and start the local server on port `1234` or `8080`.
+* **NVIDIA Nemotron (First-Class NVIDIA Open Models):**
+  * `Llama-3.1-Nemotron-8B-Instruct.Q4_K_M.gguf` (~4.8 GB weights) — Takes <5 GB VRAM, leaving ~11 GB VRAM free on a 16GB card for Isaac Sim rendering and PhysX simulation.
+  * `Nemotron-Mini-4B-Instruct.Q4_K_M.gguf` (~2.5 GB weights) — Ultra-low latency tool calling footprint.
+* **Meta Llama & Qwen:**
+  * `Meta-Llama-3-8B-Instruct.Q4_K_M.gguf` (~4.8 GB)
+  * `Qwen2.5-7B-Instruct` / `Qwen2.5-32B` (with partial offload or MoE quants)
+
+**Launch with `llama.cpp` (CLI / Headless):**
+```bash
+# Example with NVIDIA Nemotron 8B:
+llama-server -m models/Llama-3.1-Nemotron-8B-Instruct.Q4_K_M.gguf --port 8080 -ngl 99
+```
+The server will be live and serving at `http://127.0.0.1:8080/v1`.
+
+**Launch with LM Studio (GUI):**
+Load your model (`Llama-3.1-Nemotron-8B`, `Meta-Llama-3-8B`, or `Qwen`), connect the `mcp/isaac-sim` tool server, and start the local inference server on port `8080` (or `1234`).
 
 *(Documentation reference: [llama.cpp HTTP server docs](https://github.com/ggerganov/llama.cpp/tree/master/examples/server) / [LM Studio](https://lmstudio.ai/))*
 

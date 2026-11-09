@@ -90,7 +90,7 @@ graph TD
 
 ## Closed-Loop Agentic Testing (SiTL)
 
-The [`agentic/`](agentic/README.md) directory contains a simulation-in-the-loop testing harness connecting a local Llama model to Isaac Sim using the Model Context Protocol (MCP):
+The [`agentic/`](agentic/README.md) directory contains a simulation-in-the-loop testing harness connecting local open-weights models (such as NVIDIA Nemotron, Meta Llama, or Qwen) to Isaac Sim using the Model Context Protocol (MCP):
 
 * **Tool execution via MCP:** The model inspects the USD stage and commands joint velocity using standard MCP tools (compatible with [`isaacsim-mcp-server`](https://github.com/whats2000/isaacsim-mcp-server) or custom tool servers).
 * **Ground-truth physical assertions:** The harness steps PhysX dynamics and validates that commanded wheel velocity actually moves the chassis forward along the +X axis without tipping over.
@@ -98,7 +98,7 @@ The [`agentic/`](agentic/README.md) directory contains a simulation-in-the-loop 
 
 ```mermaid
 flowchart LR
-    Goal["1. Test Goal"] --> Model["2. Local Llama / Qwen (LM Studio / llama.cpp)"]
+    Goal["1. Test Goal"] --> Model["2. Local Nemotron / Llama / Qwen (LM Studio / llama.cpp)"]
     Model -->|"3. MCP Tool Call"| Bridge["4. Isaac Sim MCP Bridge"]
     Bridge -->|"5. Joint Drive"| PhysX["6. PhysX 5 Dynamic Step"]
     PhysX -->|"7. Ground-Truth Telemetry"| Assertion{"8. Physical Assertion?"}
