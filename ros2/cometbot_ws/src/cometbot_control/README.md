@@ -1,18 +1,13 @@
-# ros2/cometbot_ws/src/cometbot_control/
+# `cometbot_control` package
 
-ROS 2 package metadata, launch configuration, runtime node code, and package tests for joystick-based rover teleoperation.
+| Path | Job |
+| --- | --- |
+| `cometbot_control/mapping.py` | Clips Joy axes, applies radial deadzone and signed cubic shaping; missing axes return zero |
+| `cometbot_control/teleop_publisher.py` | Reads YAML parameters, subscribes to `/joy`, publishes `/cmd_vel` at 20 Hz; Joy older than 0.5 s yields zero |
+| `launch/teleop.launch.py` | Starts one Joy node or a split left/right pair and `teleop_publisher`; layout/IDs come from `ROVER_JOY_LAYOUT` and `ROVER_JOY_DEVICE_IDS` |
+| `test/test_mapping.py` | Mapping behavior tests independent of ROS runtime |
+| `setup.py`, `package.xml` | Humble package entry point and dependencies |
 
-## Contents
+The current project settings are in `config/joy.yaml` and `config/controller.yaml` at the repository root. In the single-controller default, axis 1 controls linear motion and axis 3 turning. The optional paired launch uses left axis 1 and right axis 0. The 0.1 teleop deadzone and cubic power shape the command. See [ROS 2 guide](../../../../docs/ros2.md) for the full parameter and topic table.
 
-- __pycache__/
-- cometbot_control/
-- config/
-- launch/
-- package.xml
-- resource/
-- setup.cfg
-- setup.py
-- test/
-
-## Simulation relevance
-This workspace supplies the ROS 2 control-side components that are intended to publish rover commands for Isaac Sim.
+Docker mounts the parent colcon workspace at `/workspace` and builds this package there. `build/`, `install/`, and `log/` are generated workspace outputs, not package source.

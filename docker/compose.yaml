@@ -18,8 +18,8 @@ services:
       - ../ros2/cometbot_ws:/workspace
       - ../config:/opt/rover/config:ro
       - /dev/input:/dev/input:ro
-    devices:
-      - ${ROVER_JOYSTICK_DEVICE:-/dev/input/js0}:${ROVER_JOYSTICK_DEVICE:-/dev/input/js0}:r
+    device_cgroup_rules:
+      - "c 13:* r"
     group_add:
       - ${INPUT_GID:-995}
     stdin_open: true

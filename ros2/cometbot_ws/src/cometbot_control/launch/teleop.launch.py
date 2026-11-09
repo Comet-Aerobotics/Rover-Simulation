@@ -6,10 +6,31 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     config_root = Path(os.environ.get("ROVER_CONFIG_DIR", "/opt/rover/config"))
-    device_id = int(os.environ.get("ROVER_JOY_DEVICE_ID", "0"))
+    layout = os.environ.get("ROVER_JOY_LAYOUT", "single")
+    device_ids = [int(value) for value in os.environ.get("ROVER_JOY_DEVICE_IDS", "0").split(",")]
+    if layout == "pair" and len(device_ids) == 2:
+        joy_nodes = [
+            Node(package="joy", executable="joy_node", name="joy_left", output="screen",
+                 parameters=[str(config_root / "joy.yaml"), {"device_id": device_ids[0]}],
+                 remappings=[("joy", "/joy_left")]),
+            Node(package="joy", executable="joy_node", name="joy_right", output="screen",
+                 parameters=[str(config_root / "joy.yaml"), {"device_id": device_ids[1]}],
+                 remappings=[("joy", "/joy_right")]),
+        ]
+        teleop_overrides = {
+            "linear_joy_topic": "/joy_left",
+            "angular_joy_topic": "/joy_right",
+            "linear_axis": 1,
+            "angular_axis": 0,
+        }
+    else:
+        joy_nodes = [
+            Node(package="joy", executable="joy_node", name="joy_node", output="screen",
+                 parameters=[str(config_root / "joy.yaml"), {"device_id": device_ids[0]}]),
+        ]
+        teleop_overrides = {}
     return LaunchDescription([
-        Node(package="joy", executable="joy_node", name="joy_node", output="screen",
-             parameters=[str(config_root / "joy.yaml"), {"device_id": device_id}]),
+        *joy_nodes,
         Node(package="cometbot_control", executable="teleop_publisher", name="teleop_publisher",
-             output="screen", parameters=[str(config_root / "controller.yaml")]),
+             output="screen", parameters=[str(config_root / "controller.yaml"), teleop_overrides]),
     ])

@@ -1,40 +1,34 @@
 # Focused simulation inventory
 
-**Updated:** 2026-11-05 | **Scope:** this LunaLab/Jackal simulation and its Stadia-to-ROS-to-Isaac control path.
+**Reviewed November 8, 2026.** This inventory describes the saved canonical scene and the separately tracked 55 kg candidate. The candidate can have local modifications; record the file and revision used for a test. The adjacent `../AIAA-Isaac-Sim-Rover-source-archive/` preserves broader source intake, while `legacy/archived_scripts/` contains selected provenance only.
 
-The detailed responsibility-to-file audit is [ownership-and-migration.md](ownership-and-migration.md). Full initial repository intake, earlier scene revisions, and generated tooling/build outputs are retained outside the focused project in `../AIAA-Isaac-Sim-Rover-source-archive/`. The active tree contains the canonical local-Jackal scene dependency closure, relevant runtime code/configuration, and specifically relevant archived scripts. `work/` and ROS `build/`, `install/`, and `log/` are intentionally absent from the source tree; their preserved copies are in the adjacent archive.
+## Runtime components
 
-## Authoritative system
+| Component | Active source | Current saved or observed state |
+| --- | --- | --- |
+| Canonical stage | `scenes/CAMERASYNCSSMOETIMES.usd` | Z-up, 1 m/USD unit; local VLP-16 Jackal, corrected terrain DEM, placed-rock colliders |
+| Ground | `/Lunalab/Terrain/terrain_mesh`, source DEM and `config/terrain.yaml` | 650,000 points, 1,296,702 triangles, enabled static triangle-mesh collider |
+| Sand stage | Generated `in work/*_SAND_CANDIDATE.usd` | 176 visible/colliding tiles; runtime rebuilds touched tiles from wheel motion |
+| Rover | `/jackal`, referenced `assets/robots/jackal/ros2_jackal_PhysX_vlp16.usd` | Four wheel revolute joints; canonical base mass authored as zero, working candidate totals about 55 kg |
+| Drive graphs | `/jackal/ActionGraph`, `/jackal/ROS2_Graph/DriveGraph` | Both saved active; intended graph radius/distance 0.098/0.3755 m, duplicate uses 0.09/0.335 m |
+| OAK camera | `/jackal/base_link/DM9098Pro_enclosure/OAK_D_Pro_RGB`, `/ActionGraph` | 640 × 400 active graph render product for RGB/depth; second 640 × 480 product also saved |
+| VLP-16 lidar | `/jackal/base_link/laser/Lidar`, `LiDARGraph` | 360° field of view, viewport draw lines/points enabled, `/scan` publisher graph |
+| Pose/time graphs | `TFGraph`, `ClockGraph`, `/ROS2_Connection_Test` | TF, odometry, and clock graph nodes saved; sampled `/tf` reached WSL |
+| ROS teleop | `ros2/cometbot_ws/src/cometbot_control`, `config/{joy,controller}.yaml` | Humble `joy_node` and `teleop_publisher` in `aiaa_rover_dev`; `/joy` to `/cmd_vel` |
+| Host orchestration | `scripts/windows/`, `docker/` | WSL Docker context, USB/IP joystick selection, scene launch, opt-in sand runtime |
+| Lab assets | `assets/environments/lunalab/` | Room geometry, materials, seven placed rock convex-hull colliders, six ceiling lights and projector light |
 
-| Component | Active source | Observed status |
-|---|---|---|
-| Stage | `scenes/CAMERASYNCSSMOETIMES.usd` (canonical); earlier scene revisions removed from this project | Canonical stage is Z-up, 1 m/unit, uses the local VLP-16 Jackal, corrected terrain orientation, and placed-rock colliders. It was opened/rendered in Isaac Sim 6.1 after terrain and rock changes; the user reviewed the result visually. |
-| Terrain | `assets/terrain/source/` (hash-verified copy of OmniLRS `Terrain_lidar01`), `config/terrain.yaml`, `terrain/` | Canonical scene has 650,000 points, 1,296,702 triangles, one static terrain collider, and convex-hull colliders on all seven placed rocks. The corrected mesh matches the transposed DEM. `Terrain_lidar02` is archived and not referenced by this scene. |
-| Rover/graph | `/jackal` and `/jackal/ActionGraph` in `scenes/CAMERASYNCSSMOETIMES.usd` | Canonical scene opened and rendered in Isaac Sim 6.1, exposes four wheel DOFs, and produced a measured static wheel-terrain contact. Powered motion and contact stability remain open. |
-| Camera | `/ActionGraph` in selected scene; imported enclosure at `assets/robots/camera/` | 640×400 shared render product for depth and RGB with corresponding camera-info topics, `oak_d_optical_frame`; corrected pose and output messages remain unverified in Isaac. |
-| ROS | `ros2/cometbot_ws/src/cometbot_control/` and `config/{joy,controller,ros}.yaml` | Humble package builds; live legacy nodes and Stadia device observed. Six mapping tests pass. |
-| Docker | `docker/` | Humble image builds; new service is separate from active `cometbot_dev`, and DDS profile has no fixed initial peer. |
+The inspected 55 kg candidate had 70 render meshes and about 1.90 million triangles, of which the terrain contributes 1.30 million. It had 25 enabled colliders, seven OmniGraph hierarchies, and three saved render products. These are scene inventory counts, not FPS measurements. See [performance analysis](performance-analysis.md) for timed comparisons.
 
-## Exact open dependencies/limitations
+## Evidence and open acceptance
 
-- The canonical scene uses the project-owned VLP-16 Jackal asset and matching graph joint names.
-- The wall material's stale UI default was corrected to the existing normal map referenced by its MDL definition.
-- Earlier scene revisions with remote Jackal references or the terrain axis mismatch were removed from the active project. Source snapshots remain in the adjacent archive.
-- The former default scene contained a zero-padded 3.48 m terrain strip because the 998×652 DEM was not transposed to match the 650×1000 mesh grid. The canonical scene matches the transposed DEM and has enabled convex-hull colliders on all seven placed rock meshes.
-- WSL diagnostics see `cometbot_dev` with `/joy_node` and `/teleop_publisher` running, Stadia attached at BUSID 1-1, and `/dev/input/js0`/`event0`. The new image/container is available, but its teleop launch was not started to avoid duplicate control nodes.
-- End-to-end Windows Isaac Sim DDS delivery, sensor output, powered motion, and sustained contact behavior remain unverified. Isaac Sim automatically migrated deprecated nodes in memory and showed an unsaved marker; no scene edits were saved to disk.
+| Behavior | Evidence | Limit |
+| --- | --- | --- |
+| Canonical visual scene | Opened/rendered and structurally audited in Isaac Sim 6.1 | Powered handling in this exact scene is not established |
+| 55 kg candidate motion | User drove the rover with controller; isolated ROS Twist trials also moved it | Does not automatically certify canonical mass/handling |
+| ROS sensor delivery | Actual scan, RGB, depth, camera-info, and TF messages reached WSL in a prior running candidate | Image content, calibration, and sustained GUI rates need application-specific checks |
+| Sand repair | Headless CPU and GPU drives formed ~3 cm ruts while maintaining RGB/depth/scan cadence | GUI rut appearance, controller feel, and soil calibration remain open |
+| Lidar overlay | Saved asset has `drawLines` and `drawPoints` enabled | Needs visual confirmation after scene reload |
+| Performance | Controlled headless tests identified GPU physics/contact and camera rendering costs | Operator GUI FPS cannot be inferred directly from those numbers |
 
-## Source status
-
-- Original `Isaac-Sim`, `OmniLRS`, and `isaacsim-mcp-server` repositories with Git metadata are preserved in the adjacent source archive.
-- Only simulation-relevant original scripts were retained under `legacy/archived_scripts/`; full CAN firmware/build output, general OmniLRS engine and lunar-yard assets, MCP/LLM services, unrelated scene experiments, and Jetbot assets are outside the project.
-- Startup originals remain archived beside the implementation; the supported wrapper targets Docker inside WSL, unlike the Windows Docker Desktop context.
-
-## Validation coverage
-
-- **Passed:** nine Python tests (six ROS mapping, three terrain); canonical and local-Jackal Action Graph structural audits; terrain collider audit; 100% raw DEM height parity; candidate dependency scan (one Isaac-runtime shader unresolved); YAML/Compose parsing; PowerShell syntax checks; Humble image/package build.
-- **Observed only:** WSL USB attachment, `/dev/input` devices, live legacy `/joy` and `/cmd_vel` nodes. This does not validate a nonzero joystick command reaching Isaac Sim.
-- **Still required in Isaac Sim:** confirm sensor messages, test DDS delivery and nonzero teleop, and verify powered wheel motion plus terrain contact stability. The canonical scene is the launch target.
-- **Terrain structural audit:** the canonical scene passes the read-only USD audit with 650,000 points, 1,296,702 triangles, one terrain collider, and seven of seven placed rock colliders. Isaac Sim visual review passed; dynamic rover contact is still pending.
-
-See [source manifest](source-manifest.md), [known issues](known-issues.md), and [launch guide](setup/launch.md).
+For detailed variables, use [terrain](terrain.md), [rover](rover.md), [sensors](sensors.md), [ROS 2](ros2.md), [environment](environment.md), and [known issues](known-issues.md). `work/` and ROS `build/`, `install/`, and `log/` are generated outputs, not authoritative source files.

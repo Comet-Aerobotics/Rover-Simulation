@@ -1,11 +1,30 @@
-# WSL and Docker setup
+# WSL, Docker, and USB controller setup
 
-The observed ROS container is `cometbot_dev`, ROS Humble with Fast DDS, `ROS_DOMAIN_ID=0`, and host networking in WSL. It currently bind-mounts the legacy `CAN` tree at `/root/CAN`; this container remains intact. The consolidated package is in `ros2/cometbot_ws` and Compose builds a separate `aiaa_rover_dev` container from it.
+The supported ROS container is `aiaa_rover_dev`, built from `docker/compose.yaml` inside WSL Ubuntu. `cometbot_dev` is a separate legacy container; it may be stopped or running, but its Joy/teleop processes must not duplicate the new stack on the same ROS domain. The Windows launcher calls the Docker CLI in WSL because the Windows CLI may use a different context.
 
-The Docker CLI in Windows currently points to `desktop-linux` and does not see `cometbot_dev`. Use Docker inside Ubuntu WSL. The supported Windows launcher handles this automatically. For manual commands, map the repo to its `/mnt/<drive>/...` path inside the selected distro, then use `docker compose -f docker/compose.yaml ...` there.
+## Container contract
 
-USB controller visibility: `usbipd list` on Windows should show the Stadia device attached to the selected distro; inside WSL inspect `/dev/input/js*` and `/dev/input/event*`. Device visibility in WSL does not guarantee it is usable inside a container. Compose bind-mounts `/dev/input` and explicitly grants read access to the joystick and evdev nodes; the supported Start launcher verifies it can open them and recreates a stale container after USB attachment when no teleop nodes are active.
+| Item | Current setting | Operational consequence |
+| --- | --- | --- |
+| ROS distro and middleware | Humble, `rmw_fastrtps_cpp` | Must match Isaac Sim's Bridge process |
+| Domain | `${ROS_DOMAIN_ID:-0}` | Both sides need the same value |
+| Network | Host mode inside WSL | DDS uses WSL host interfaces |
+| Workspace | `../ros2/cometbot_ws` → `/workspace` | Container builds package and sources `/workspace/install/setup.bash` |
+| Config | `../config` → `/opt/rover/config:ro` | Joy and teleop YAML available read-only |
+| Input | `/dev/input` mount plus character-device read rule in the current working Compose file | Selected `jsN` device(s) must exist and be readable when teleop starts |
+| DDS profile | `docker/fastdds.xml` | No historical fixed initial peer |
 
-Start mode builds the new image/container only after checking that legacy `/joy_node` and `/teleop_publisher` are no longer active. Then it launches `ros2 launch cometbot_control teleop.launch.py`, which starts `joy_node` and `teleop_publisher`. Inspect with `ros2 node list`, `ros2 topic info /joy`, and `ros2 topic info /cmd_vel`. Do not run a second joystick or teleop node on domain 0 while the legacy stack is active.
+The launcher checks joystick visibility in WSL, selects one device or an optional pair, and probes whether the container can open them. If a running container has stale device access and no active teleop, it can recreate it. If active teleop cannot open the controller, it stops with a diagnostic rather than silently launching a duplicate node. It waits for Joy and teleop processes after starting them.
 
-The default Fast DDS profile has no hard-coded initial peer. Do not use the historical `10.255.255.254` peer. For Windows-to-WSL discovery, diagnose interface addresses, firewall, ROS domain, middleware, and bridge logs together; see [ROS 2](../ros2.md).
+## Manual read-only checks
+
+From PowerShell:
+
+```powershell
+usbipd list
+wsl.exe -d Ubuntu --exec ls -l /dev/input
+wsl.exe -d Ubuntu --exec docker ps --format '{{.Names}} {{.Status}}'
+wsl.exe -d Ubuntu --exec docker exec aiaa_rover_dev ps -eo args=
+```
+
+The USB node number can change across reconnects. Use the launcher's selected `/dev/input/jsN`, not a hard-coded `js0`, when checking a new controller. The optional remote Joy-Con USB/IP path in the [remote controller guide](remote-controller.md) still requires a compatible WSL input driver before `joy_node` can see a joystick. See [ROS flow](../ros2.md) for topic checks and [launch](launch.md) for the full sequence.

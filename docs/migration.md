@@ -1,5 +1,7 @@
 # Focused migration record
 
+This is a historical migration snapshot. Its pending-test statements describe the earlier transition and are superseded by the current [inventory](inventory.md), [known issues](known-issues.md), and subsystem guides. In particular, controller motion and sensor messages were later observed in the 55 kg candidate, and sand mode was added afterward.
+
 The active project is limited to the LunaLab rover scene and its control/sensor path. Broad source intake was retained but moved to the adjacent `AIAA-Isaac-Sim-Rover-source-archive/` so the project tree is not a mirror of entire unrelated repositories.
 
 ## Kept active

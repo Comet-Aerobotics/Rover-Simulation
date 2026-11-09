@@ -1,12 +1,11 @@
-# assets/environments/lunalab/
+# LunaLab dependency closure
 
-Project-local LunaLab dependency closure: material definitions and maps, modular USD geometry, and rock props referenced by the rover scene.
+This folder holds local USD geometry, MDL materials, maps, rock assets, and `LICENSE.txt` used by the composed room. Keep the relative paths together when moving or copying a stage.
 
-## Contents
+| Folder | Content | Effect in simulation |
+| --- | --- | --- |
+| `USD_Assets/lunalab/` | Wall, door, curtain, grill, and other modular room geometry | Visual landmarks and, for selected prims, rigid obstacles |
+| `USD_Assets/rocks/` | Rock source assets and textures | Seven placed `/package/rock*` meshes have convex-hull collision in the canonical scene |
+| `Textures/` | MDL materials, normal/base-color maps, projector resources | RGB/viewport appearance; unresolved texture paths do not by themselves remove physics contact |
 
-- LICENSE.txt
-- Textures/
-- USD_Assets/
-
-## Simulation relevance
-These resources complete the local scene dependency tree; missing or relocated referenced files can prevent the environment or rover from loading correctly.
+The former invisible obstruction prim `/World/Lab/Lab/CurvedWall/Cube_003` is inactive in the canonical composition. The terrain collider belongs to `/Lunalab/Terrain/terrain_mesh`, outside this room-asset folder. See [environment](../../../docs/environment.md), [terrain](../../../docs/terrain.md), and [source manifest](../../../docs/source-manifest.md).
