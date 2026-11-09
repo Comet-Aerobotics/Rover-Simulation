@@ -66,17 +66,29 @@ Once the `llama.cpp` server is running, you can attach any Model Context Protoco
 
 ### 3. Run the SiTL Verification Harness
 
+The harness is modular: `GenericAgenticHarness` accepts any task subclassing `AgenticTask`. Three versioned tasks are included in `agentic/tasks/`:
+
+* **`drive` (`wheel_motion`):** Commands wheel joints on `/jackal` and validates forward PhysX displacement.
+* **`onboarding` (`onboarding_audit`):** Developer onboarding task. Audits the stage to ensure `/jackal` has rigid body physics, 4 revolute joints, valid mass (45–65 kg), and static triangle mesh terrain collision.
+* **`camera` (`camera_sync`):** Diagnoses the `PointCloudXyzNode` warning where `CameraInfo` publishes without paired depth frames. Audits render products, 640×400 resolution, and clock synchronization.
+
 From the repository root:
 
 ```powershell
-# Run with your local llama.cpp server and Isaac Sim
-py agentic/sitl_harness.py --endpoint "http://127.0.0.1:8080/v1" --model "Meta-Llama-3-8B-Instruct"
+# Run the wheel drive task
+py agentic/sitl_harness.py --task drive
 
-# Run in deterministic offline/CI mode (uses built-in heuristic solver and mock dynamics)
-py agentic/sitl_harness.py --mock-sim
+# Run the developer onboarding stage audit
+py agentic/sitl_harness.py --task onboarding
+
+# Run the camera and depth synchronization check
+py agentic/sitl_harness.py --task camera
+
+# Run with a live local llama.cpp server
+py agentic/sitl_harness.py --task drive --endpoint "http://127.0.0.1:8080/v1" --mock-sim=false
 ```
 
-To run automated unit and regression tests for the harness:
+To run automated unit and regression tests across the task suite:
 ```powershell
 py -m pytest tests/test_agentic_harness.py
 ```

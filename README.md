@@ -95,10 +95,12 @@ The [`agentic/`](agentic/README.md) directory contains a simulation-in-the-loop 
 * **Iterative self-healing:** When physical assertions fail (e.g. low drive torque, wheel slippage, or collision snags), telemetry diffs are piped back to the model for automated parameter correction.
 
 ```powershell
-# Run the automated agentic test pass (uses local llama.cpp server or built-in offline solver)
-py agentic/sitl_harness.py --task "rover_forward_kinematic_check"
+# Run task passes: drive, onboarding stage audit, or camera sync
+py agentic/sitl_harness.py --task drive
+py agentic/sitl_harness.py --task onboarding
+py agentic/sitl_harness.py --task camera
 
-# Run harness unit and regression tests (passed 3/3 in 0.02s)
+# Run harness unit and regression tests (passed 5/5 in 0.04s)
 py -m pytest tests/test_agentic_harness.py
 ```
 > For `llama.cpp` setup and MCP configuration details, see the **[Agentic SiTL Guide](agentic/README.md)**.

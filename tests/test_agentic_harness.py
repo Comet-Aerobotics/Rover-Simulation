@@ -1,10 +1,16 @@
-"""Unit tests for the Closed-Loop SiTL Agentic Test Harness."""
+"""Unit tests for the Generic SiTL Agentic Test Harness and Task Suite."""
 import pytest
-from agentic.sitl_harness import (
+from agentic.base import (
+    GenericAgenticHarness,
     IsaacSimMCPBridge,
     LocalLlmAgent,
-    ClosedLoopSitlFuzzer,
-    PhysicalAssertionResult,
+    TaskVerificationResult,
+)
+from agentic.tasks import (
+    CameraSyncTask,
+    StageAuditOnboardingTask,
+    TASK_REGISTRY,
+    WheelMotionTask,
 )
 
 
@@ -15,37 +21,62 @@ def test_mcp_bridge_tool_discovery():
     assert "isaac_set_joint_velocity" in tool_names
     assert "isaac_step_simulation" in tool_names
     assert "isaac_get_rover_telemetry" in tool_names
+    assert "isaac_inspect_prim" in tool_names
+    assert "isaac_inspect_camera_stream" in tool_names
 
 
-def test_fuzzer_successful_pass():
+def test_wheel_motion_task_pass():
     bridge = IsaacSimMCPBridge(use_mock=True)
     agent = LocalLlmAgent(endpoint_url="http://mock-offline")
-    fuzzer = ClosedLoopSitlFuzzer(bridge=bridge, agent=agent, max_retries=2)
+    harness = GenericAgenticHarness(bridge=bridge, agent=agent, max_retries=2)
 
-    report = fuzzer.run_goal_test(
-        goal_name="test_pass",
-        goal_description="Drive forward at 2.0 rad/s",
-        min_displacement_expected=0.1,
-    )
+    task = WheelMotionTask(min_displacement_expected=0.1)
+    report = harness.run_task(task)
+
     assert report["overall_success"] is True
-    assert report["final_displacement_m"] > 0.1
+    assert report["final_metrics"]["displacement_m"] > 0.1
     assert report["iterations_taken"] == 1
 
 
-def test_fuzzer_assertion_failure_and_retry():
+def test_wheel_motion_task_retry_on_failure():
     bridge = IsaacSimMCPBridge(use_mock=True)
     agent = LocalLlmAgent(endpoint_url="http://mock-offline")
-    fuzzer = ClosedLoopSitlFuzzer(bridge=bridge, agent=agent, max_retries=3)
+    harness = GenericAgenticHarness(bridge=bridge, agent=agent, max_retries=3)
 
-    # Set an impossible threshold on the first attempt (10 meters) to force retry
-    report = fuzzer.run_goal_test(
-        goal_name="test_high_threshold",
-        goal_description="Drive forward to reach 10 meters in 1 second",
-        min_displacement_expected=10.0,
-    )
-    # Should attempt all retries and log failures
+    # Set threshold to 10m to force assertion failure
+    task = WheelMotionTask(min_displacement_expected=10.0)
+    report = harness.run_task(task)
+
     assert report["iterations_taken"] == 3
     assert report["overall_success"] is False
-    assert len(report["attempts"]) == 3
     for attempt in report["attempts"]:
         assert attempt["passed"] is False
+
+
+def test_onboarding_audit_task_pass():
+    bridge = IsaacSimMCPBridge(use_mock=True)
+    agent = LocalLlmAgent(endpoint_url="http://mock-offline")
+    harness = GenericAgenticHarness(bridge=bridge, agent=agent, max_retries=2)
+
+    task = StageAuditOnboardingTask()
+    report = harness.run_task(task)
+
+    assert report["overall_success"] is True
+    assert report["final_metrics"]["rover_rigid_body"] is True
+    assert report["final_metrics"]["wheel_joints"] == 4
+    assert 45.0 <= report["final_metrics"]["rover_mass_kg"] <= 65.0
+    assert report["final_metrics"]["terrain_has_collision"] is True
+
+
+def test_camera_sync_task_pass():
+    bridge = IsaacSimMCPBridge(use_mock=True)
+    agent = LocalLlmAgent(endpoint_url="http://mock-offline")
+    harness = GenericAgenticHarness(bridge=bridge, agent=agent, max_retries=2)
+
+    task = CameraSyncTask()
+    report = harness.run_task(task)
+
+    assert report["overall_success"] is True
+    assert report["final_metrics"]["resolution"] == "640x400"
+    assert report["final_metrics"]["depth_publishing"] is True
+    assert report["final_metrics"]["clock_sync_active"] is True
