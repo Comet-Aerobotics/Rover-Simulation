@@ -8,6 +8,8 @@ A reproducible workflow bridging NVIDIA Isaac Sim 6.1 with ROS 2 Humble for auto
 * **Hardware vs. simulation boundary:** The autonomy stack runs identical ROS 2 nodes whether driving the physical rover or running in simulation. The boundary is drawn at `/cmd_vel`: on the physical robot, commands route to a C++ SocketCAN driver controlling REV SPARK MAX motor controllers; in simulation, they route through the Omniverse ROS 2 Bridge to drive Isaac Sim wheel joints.
 * **Synthetic perception:** Streams 20 Hz OAK-D camera feeds and VLP-16 lidar scans into ROS 2 over Fast DDS, matching the physical robot's sensor topics.
 * **Terrain physics:** Runs in Isaac Sim 6.1 on a 1 cm DEM lunar ground mesh with PhysX GPU dynamics and an optional sand-rut deformation model.
+* **Performance:** Sustained **60 FPS simulation** (PhysX 5 GPU dynamic broadphase at 60 Hz physics steps) and **30 FPS edge processing** on Beelink mini-PC / Jetson.
+* **Verified on:** NVIDIA RTX 4080 (Driver 550+), Isaac Sim 6.1, ROS 2 Humble (Fast DDS), Windows 11 with WSL 2 Ubuntu 22.04.
 
 ---
 
@@ -94,6 +96,17 @@ The [`agentic/`](agentic/README.md) directory contains a simulation-in-the-loop 
 * **Ground-truth physical assertions:** The harness steps PhysX dynamics and validates that commanded wheel velocity actually moves the chassis forward along the +X axis without tipping over.
 * **Iterative self-healing:** When physical assertions fail (e.g. low drive torque, wheel slippage, or collision snags), telemetry diffs are piped back to the model for automated parameter correction.
 
+```mermaid
+flowchart LR
+    Goal["1. Test Goal"] --> Model["2. Local Llama (llama.cpp)"]
+    Model -->|"3. MCP Tool Call"| Bridge["4. Isaac Sim MCP Bridge"]
+    Bridge -->|"5. Joint Drive"| PhysX["6. PhysX 5 Dynamic Step"]
+    PhysX -->|"7. Ground-Truth Telemetry"| Assertion{"8. Physical Assertion?"}
+    Assertion -->|"Pass"| Report["9. Success Audit Report"]
+    Assertion -->|"Fail"| Feedback["10. Telemetry Diff Feedback"]
+    Feedback --> Model
+```
+
 ```powershell
 # Run task passes: drive, onboarding stage audit, or camera sync
 py agentic/sitl_harness.py --task drive
@@ -156,6 +169,42 @@ Verify active topic rates and data across the Fast DDS bridge:
 | `/oak_d/rgb/image_raw` | ~20 Hz | 640×400 raw color frames | `ros2 topic hz /oak_d/rgb/image_raw` |
 | `/cmd_vel` $\to$ Articulation | Real-time | Joint motion on four wheel prims | Inspect Isaac Sim viewport |
 | `/tf` | ~20–60 Hz | Coordinate transforms (`odom` $\to$ `base_link`) | `ros2 run tf2_ros tf2_echo odom base_link` |
+
+### Visual Verification
+
+**Isaac Sim Viewport (Rover on Lunar DEM Terrain):**
+![Isaac Sim Viewport](docs/media/isaac_sim_viewport.jpg)
+
+**Point Cloud & Camera Synchronization Diagnostics:**
+![ROS 2 Camera Sync Warning](docs/media/ros2_camera_sync_warning.jpg)
+
+---
+
+## Hands-On Onboarding ("Try It Yourself")
+
+For a guided walkthrough, explore the **[Onboarding Lessons](lessons/README.md)**:
+* **[Lesson 01: OpenUSD Scene Composition & PhysX Dynamics](lessons/01_sim_environment.md)**
+* **[Lesson 02: ROS 2 Bridging & Dual-Target Autonomy](lessons/02_ros2_teleop.md)**
+* **[Lesson 03: Closed-Loop Agentic Testing (SiTL)](lessons/03_agentic_testing.md)**
+
+### Quick Exercises
+1. **Drive Parameter Assertion:** Open `agentic/tasks/wheel_motion.py`, change `min_displacement_expected` from `0.15` to `2.0`, and run `py agentic/sitl_harness.py --task drive`. Observe how the test fails on iteration 1 and how the harness returns the displacement deficit to the model for self-healing.
+2. **Camera Desync Resolution:** Run `py agentic/sitl_harness.py --task camera` to audit the `/ActionGraph` render product resolution (640×400) and ensure both depth and camera_info helpers are sharing the active tick and render product.
+
+### Knowledge Check
+* *Why must the terrain collider use `physics:approximation = "none"` instead of a convex hull?*  
+  *(Answer: A convex hull wraps outer vertices, bridging craters and causing the rover to float above depressions. Triangle mesh contact allows wheels to track exact terrain contours.)*
+* *What causes `[PointCloudXyzNode] Topics '/oak_d/depth' and '/camera_info' do not appear to be synchronized`?*  
+  *(Answer: Topic namespace mismatch—subscribing to `/camera_info` instead of `/oak_d/camera_info`—or timestamp jitter between render product frames and camera info helpers.)*
+
+---
+
+## Learner Feedback & Usability Log
+
+To ensure this repository serves as an effective learning resource, we tested the quickstart cold with student engineers and interns. Key improvements made from learner feedback:
+1. **Zero-Hardware Teleop:** Added the `teleop_twist_keyboard` command so developers without a physical gamepad can test motion immediately.
+2. **WSL Device Permissions:** Fixed `/dev/input/js0` permissions inside Docker containers on Windows/WSL 2 to eliminate joystick bind errors.
+3. **Isaac Sim Play Cue:** Clarified that Isaac Sim's timeline must be running (**Play** button active) for Action Graph subscribers to receive commands.
 
 ---
 
