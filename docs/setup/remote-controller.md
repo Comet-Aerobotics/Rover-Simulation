@@ -72,7 +72,7 @@ Start the usual launcher from the repository root on the simulation computer:
 
 In Start mode, the launcher scans online Tailscale peers for shared USB/IP devices. It automatically uses a single available host; if more than one computer is sharing devices, it asks which computer to use. It asks which devices to attach when the device names are generic or there are multiple choices. The selection is saved in the simulation computer's ignored `.env` file, so users do not have to commit or manually maintain per-person hostnames and BUSIDs. If a device or BUSID changes, the launcher prompts again. `.env` values for a preferred host or BUSIDs are optional overrides.
 
-Confirm that the launch output lists the controller under **Controllers visible to WSL** as `/dev/input/jsN`. The input monitor should then show changing `sensor_msgs/msg/Joy` values when sticks or buttons move. If USB devices appear in `usbip list` but no joystick node appears in WSL, Linux may not have a HID driver for that controller; see the driver section below.
+Confirm that the launch output lists the controller under **Controllers visible to WSL** as `/dev/input/jsN`. The input monitor should then show changing `sensor_msgs/msg/Joy` values when sticks or buttons move. A joystick node can appear even when Linux has decoded the controller incorrectly; axes pinned at `-1.0` or `1.0` while untouched are a sign to check the HID driver binding, not to assume calibration is bad. If USB devices appear in `usbip list` but no usable joystick node appears in WSL, Linux may not have a HID driver for that controller; see the driver section below.
 
 ## Controller drivers
 

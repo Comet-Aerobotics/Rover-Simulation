@@ -9,6 +9,7 @@ Use the observed scene name and whether **Play** is active when reporting a fail
 | Remote controller not discovered | Source PC online in Tailscale, `usbipd list` says `Shared`, TCP 3240 reachable | [Remote controller guide](setup/remote-controller.md); launcher does not require editing shared `.env` for each host |
 | Joystick in WSL, absent in Docker | Container device bind and input-group permission | Rerun Start after attachment; inspect selected `jsN` |
 | `/joy` is present but axes stay zero | Correct selected controller and Joy device ID | `config/joy.yaml`, physical axis numbering |
+| Joy axes stay at `-1.0` or `1.0` while untouched | Check which `/dev/input/jsN` the launcher selected and its HID driver binding | [Remote controller guide](setup/remote-controller.md); Joy-Con 2 may need its protocol driver even when a `jsN` node exists |
 | Split controller has only one active side | Check both `/joy_left` and `/joy_right` and select left device first, right device second | For Joy-Con 2, select both USB devices and use pair mode; see [remote controller guide](setup/remote-controller.md) |
 | `/joy` changes but `/cmd_vel` stays zero | `config/controller.yaml` axis 1/3, deadzone 0.1, 0.5 s freshness | `teleop_publisher` log and optional enable button |
 | `/cmd_vel` exists but Isaac has no subscriber | Press Play, confirm ROS 2 Bridge loaded | Same domain/Fast DDS in the **existing** Kit process; restart Kit to change its environment |

@@ -67,7 +67,7 @@ $isaacPython = 'C:\isaac-sim\_build\windows-x86_64\release\python.bat'
 .\scripts\windows\start_rover_all.ps1 -SandDeformation
 ```
 
-The builder copies the 55 kg candidate and keeps the output beside it so relative USD references still resolve. It does not change the source scene. An already-running Isaac Sim process prevents the launcher from attaching sand mode; save and close that process before the sand launch. Press **Play**, drive, and look for `AIAA_SAND_READY` and `AIAA_SAND_RUT` in the Isaac log. Save the open sand stage if you want ruts to persist; the runtime reconstructs current heights from saved tiles when reopened. To reset, close it and rebuild with `--overwrite`.
+The builder copies the 55 kg candidate and keeps the output beside it so relative USD references still resolve. It does not change the source scene. An already-running Isaac Sim process prevents the launcher from attaching updated sand code; save any unrelated work and close that process before relaunching. Press **Play**, drive, and look for `AIAA_SAND_READY` and `AIAA_SAND_RUT` in the Isaac log. **Pause** keeps the current ruts; **Stop/Reset** restores the sand scene's starting surface by default and prints `AIAA_SAND_RESET`. The runtime also clears ruts from a previously saved sand candidate when it attaches, unless persistence is enabled. Set `persist_deformation_on_reset: true` only when intentionally keeping and saving deformed terrain. Closing and rebuilding with `--overwrite` also restores a clean generated scene; do not overwrite a sand stage whose saved ruts you intend to keep.
 
 ## Sand model parameters
 
@@ -77,21 +77,22 @@ The current model is empirical. It uses wheel position, heading, angular speed, 
 | --- | ---: | --- |
 | `tile_cells` | 64 | Cells per tile edge; smaller tiles reduce per-rebuild geometry but increase tile count |
 | `update_interval_s` | 0.20 s | Time between wheel-state sampling and tile updates |
+| `persist_deformation_on_reset` | `false` | Stop restores touched tiles to the scene's starting surface; `true` keeps ruts across Stop and allows intentional save/reload |
 | `wheel_radius_m` | 0.098 m | Contact-height gate and wheel surface speed from spin; keep in parity with robot |
 | `wheel_width_m` | 0.080 m | Lateral rut footprint |
 | `contact_length_m` | 0.120 m | Longitudinal rut footprint |
 | `reference_load_n` | 135 N | Load used to scale reference sinkage; close to nominal 55 kg/4 weight |
-| `reference_sinkage_m` | 0.018 m | Target depression at reference load before slip and time response |
+| `reference_sinkage_m` | 0.006 m | Conservative target depression at reference load before slip and time response |
 | `pressure_exponent` | 1.1 | Nonlinear load-to-sinkage response |
-| `maximum_sinkage_m` | 0.060 m | Upper bound on rut depth below the original DEM |
-| `compaction_time_s` | 0.18 s | How quickly repeated contact approaches target depth |
-| `slip_sinkage_gain` | 0.75 | Extra target depth when wheel surface speed and travel speed differ |
-| `displaced_volume_fraction` | 0.30 | Portion of removed height added to side berms in the grid model |
-| `maximum_berm_m` | 0.020 m | Upper bound on raised ground above the original DEM |
+| `maximum_sinkage_m` | 0.012 m | Upper bound on rut depth below the original DEM |
+| `compaction_time_s` | 0.30 s | How quickly repeated contact approaches target depth |
+| `slip_sinkage_gain` | 0.30 | Extra target depth when wheel surface speed and travel speed differ |
+| `displaced_volume_fraction` | 0.15 | Portion of removed height added to side berms in the grid model |
+| `maximum_berm_m` | 0.003 m | Upper bound on raised ground above the original DEM |
 | `contact_tolerance_m` | 0.025 m | Extra clearance for accepting a wheel as near sand |
 | `maximum_stamp_spacing_m` | 0.025 m | Interpolation spacing for long wheel steps to avoid rut gaps |
 
-These numbers are provisional. A physically grounded calibration needs measured wheel load, sinkage, slip, and traction on the intended sand. A headless ROS drive reached roughly 2.8–3.0 cm maximum rut depth while preserving RGB/depth/scan cadence; [performance analysis](performance-analysis.md) gives the conditions. Visual rut quality and controller feel in the GUI remain separate acceptance checks.
+These numbers are provisional, chosen to avoid the visually excessive channels seen with the earlier 18 mm reference sinkage, 60 mm cap, and 20 mm berm cap. At the nominal 135 N wheel load, the new target is 6 mm without slip and at most 7.8 mm at full modeled slip; the 12 mm cap accommodates higher loads. The terrain texture and grazing light can make even shallow relief look dark and sharp. A physically grounded calibration needs measured wheel load, sinkage, slip, and traction on the intended sand. The [performance analysis](performance-analysis.md) measured roughly 2.8–3.0 cm ruts with the **previous** settings. A separate headless direct-wheel drive with the new defaults traveled about 0.58 m in three simulated seconds, made a 7.7 mm maximum rut, and returned to zero measured depth on Stop. GUI appearance and controller feel remain to be checked.
 
 ## Offline wheel-path replay
 
@@ -114,6 +115,8 @@ This applies a prescribed path to the soil model; it does not simulate the rover
 | Static wheel contact | Wheels rest on visible ground without lasting jitter | Ground approximation, mass, wheel shapes, overlapping colliders |
 | Sand drive | Ruts follow contacted wheels and rover keeps moving | Runtime log, tile collision, wheel pose query, ROS command path |
 | RGB/depth and `/scan` | Messages continue while ruts update | Camera/lidar graphs and the full-mesh update regression described in performance report |
-| Save/reload | Same rut geometry appears and remains collidable | Save the generated sand stage, then reopen with sand runtime attached |
+| Pause then resume | Existing ruts remain and driving continues from them | Timeline state and runtime log |
+| Stop then Play, default | Touched tiles return to baseline before a new drive | `AIAA_SAND_RESET`, tile heights, next contact |
+| Intentional persistence | With `persist_deformation_on_reset: true`, Stop keeps ruts and a saved sand stage reloads them | Config value and saved tile heights |
 
 **DEM** means a sampled elevation array. A **USD Mesh** is the points and triangular faces used for rendering. A **collision mesh** is the geometry used for physics contact. A **tile** is one small patch of the sand surface. A **rut** is the depression beneath a wheel, and a **berm** is the small raised edge beside it. A **dirty region** is the part of the height grid changed by a wheel stamp; only intersecting tiles are rebuilt.

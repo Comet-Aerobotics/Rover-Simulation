@@ -44,6 +44,7 @@ class SandRuntime:
         self.usd_context = omni.usd.get_context()
         self.cfg = read_config()
         self.soil_cfg = self.cfg["deformation"]
+        self.persist_on_reset = bool(self.soil_cfg.get("persist_deformation_on_reset", False))
         self.interval = float(self.soil_cfg["update_interval_s"])
         self.tile_cells = int(self.soil_cfg["tile_cells"])
         self.mesh = UsdGeom.Mesh(stage.GetPrimAtPath(TERRAIN))
@@ -64,6 +65,7 @@ class SandRuntime:
         })
         self.field = RutField(self.points[:, :, 2], float(self.cfg["resolution_m"]), params)
         self.tile_info = {}
+        saved_rut_tiles = set()
         for prim in self.tile_root.GetChildren():
             row0 = int(prim.GetCustomDataByKey("sand:row0"))
             row1 = int(prim.GetCustomDataByKey("sand:row1"))
@@ -71,10 +73,13 @@ class SandRuntime:
             col1 = int(prim.GetCustomDataByKey("sand:col1"))
             tile = UsdGeom.Mesh(prim)
             saved_points = _numpy(tile.GetPointsAttr().Get()).reshape(row1 - row0 + 1, col1 - col0 + 1, 3)
-            # The original terrain points retain the undeformed DEM. Saved
-            # tile points restore any ruts when a sand scene is reopened.
-            self.field.height[row0:row1 + 1, col0:col1 + 1] = saved_points[:, :, 2]
-            self.tile_info[str(prim.GetPath())] = (
+            path = str(prim.GetPath())
+            baseline = self.field.baseline[row0:row1 + 1, col0:col1 + 1]
+            if self.persist_on_reset:
+                self.field.height[row0:row1 + 1, col0:col1 + 1] = saved_points[:, :, 2]
+            elif not np.allclose(saved_points[:, :, 2], baseline, atol=1e-6):
+                saved_rut_tiles.add(path)
+            self.tile_info[path] = (
                 row0, row1, col0, col1,
                 tile.GetFaceVertexCountsAttr().Get(),
                 tile.GetFaceVertexIndicesAttr().Get(),
@@ -97,13 +102,36 @@ class SandRuntime:
         self.previous_positions = {}
         self.last_time = None
         self.changed_tiles = 0
+        self.modified_tiles = set()
+        self._has_played = False
+        self._stop_requested = False
+        if saved_rut_tiles:
+            self._sync_tiles(paths=saved_rut_tiles, record_rut=False)
+            print(f"AIAA_SAND_RESET reason=loaded_scene tiles={len(saved_rut_tiles)}", flush=True)
         self._subscription = self.app.get_update_event_stream().create_subscription_to_pop(
             self._update, name="aiaa_sand_deformation")
+        self._timeline_subscription = self.timeline.get_timeline_event_stream().create_subscription_to_pop_by_type(
+            omni.timeline.TimelineEventType.STOP, self._on_timeline_stop)
         print(f"AIAA_SAND_READY tiles={len(self.tile_info)} mass={self.mass_kg:.2f}kg ",
-              f"load_per_wheel={self.load_per_wheel_n:.1f}N", flush=True)
+              f"load_per_wheel={self.load_per_wheel_n:.1f}N persist_on_reset={self.persist_on_reset}", flush=True)
 
     def stop(self):
         self._subscription = None
+        self._timeline_subscription = None
+
+    def _on_timeline_stop(self, _event):
+        # Apply the reset on the next Kit update, outside the timeline callback.
+        self._stop_requested = True
+
+    def _finish_stop(self):
+        if not self.persist_on_reset:
+            self._reset_deformation()
+        self.articulation = None
+        self.wheel_prims = None
+        self.dof_indices = None
+        self._has_played = False
+        self.last_time = None
+        self.previous_positions.clear()
 
     def _initialize_wheels(self):
         from isaacsim.core.experimental.prims import Articulation, RigidPrim
@@ -134,10 +162,17 @@ class SandRuntime:
         if not current_stage or current_stage.GetRootLayer().identifier != self.stage.GetRootLayer().identifier:
             self.stop()
             return
+        if self._stop_requested:
+            self._stop_requested = False
+            self._finish_stop()
+            return
         if not self.timeline.is_playing():
+            if self.timeline.is_stopped() and self._has_played:
+                self._finish_stop()
             self.last_time = None
             self.previous_positions.clear()
             return
+        self._has_played = True
         now = float(self.timeline.get_current_time())
         if self.last_time is None:
             self.last_time = now
@@ -206,12 +241,26 @@ class SandRuntime:
         self.points[:, :, 2] = self.field.height
         self._sync_tiles(dirty)
 
-    def _sync_tiles(self, dirty: DirtyRegion):
+    def _reset_deformation(self):
+        if not self.modified_tiles:
+            return
+        paths = set(self.modified_tiles)
+        self.field.height[:, :] = self.field.baseline
+        self.points[:, :, 2] = self.field.height
+        self._sync_tiles(paths=paths, record_rut=False)
+        self.modified_tiles.clear()
+        print(f"AIAA_SAND_RESET reason=timeline_stop tiles={len(paths)}", flush=True)
+
+    def _sync_tiles(self, dirty: DirtyRegion | None = None, *,
+                    paths: set[str] | None = None, record_rut: bool = True):
         from pxr import UsdGeom, UsdPhysics, Vt
 
         count = 0
         for path, (row0, row1, col0, col1, counts, indices) in self.tile_info.items():
-            if row1 < dirty.row_min or row0 > dirty.row_max or col1 < dirty.col_min or col0 > dirty.col_max:
+            if paths is not None and path not in paths:
+                continue
+            if dirty is not None and (row1 < dirty.row_min or row0 > dirty.row_max or
+                                      col1 < dirty.col_min or col0 > dirty.col_max):
                 continue
             tile_points = np.ascontiguousarray(self.points[row0:row1 + 1, col0:col1 + 1].reshape(-1, 3))
             # Updating points on a live PhysX triangle mesh does not move its
@@ -231,8 +280,11 @@ class SandRuntime:
             UsdPhysics.CollisionAPI.Apply(tile.GetPrim()).CreateCollisionEnabledAttr(True)
             UsdPhysics.MeshCollisionAPI.Apply(tile.GetPrim()).CreateApproximationAttr("none")
             count += 1
-        self.changed_tiles += count
-        if self.changed_tiles % 20 < count:
+            if record_rut:
+                self.modified_tiles.add(path)
+        if record_rut:
+            self.changed_tiles += count
+        if record_rut and self.changed_tiles % 20 < count:
             print(f"AIAA_SAND_RUT tiles_rebuilt={self.changed_tiles} ",
                   f"max_depth_m={float(np.max(self.field.baseline - self.field.height)):.4f}", flush=True)
 

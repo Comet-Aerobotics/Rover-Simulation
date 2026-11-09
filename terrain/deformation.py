@@ -18,13 +18,13 @@ class SoilParameters:
     wheel_width_m: float = 0.080
     contact_length_m: float = 0.120
     reference_load_n: float = 135.0
-    reference_sinkage_m: float = 0.018
+    reference_sinkage_m: float = 0.006
     pressure_exponent: float = 1.1
-    maximum_sinkage_m: float = 0.060
-    compaction_time_s: float = 0.18
-    slip_sinkage_gain: float = 0.75
-    displaced_volume_fraction: float = 0.30
-    maximum_berm_m: float = 0.020
+    maximum_sinkage_m: float = 0.012
+    compaction_time_s: float = 0.30
+    slip_sinkage_gain: float = 0.30
+    displaced_volume_fraction: float = 0.15
+    maximum_berm_m: float = 0.003
     contact_tolerance_m: float = 0.025
     maximum_stamp_spacing_m: float = 0.025
 

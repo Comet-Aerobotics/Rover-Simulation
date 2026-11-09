@@ -46,7 +46,7 @@ The visible 1 cm terrain mesh was unchanged in these proxy tests. A 10 cm collis
 
 ## Sand-mode finding and repair
 
-The original sand scene rendered one 650,000-point terrain mesh while updating small collision tiles. A stationary rut benchmark missed a driving failure. With the ROS bridge enabled and a 0.5 m/s Twist command for three simulated seconds, static sand tiles moved the rover 1.03 m, but the full rut runtime moved it only 0.0085 m. A visual-only full-mesh update yielded zero measured travel. At a 10 Hz OAK rate over four simulated seconds, RGB/depth delivery fell from 38 pairs with static tiles to 5–6 pairs with full-mesh updates. Updating only the small collision tiles preserved 0.92 m travel, 38 RGB/depth pairs, 81 scans, and a 2.8 cm rut. This isolated the regression to the large rendered-mesh write; the exact renderer or physics invalidation mechanism remains unprofiled.
+The original sand scene rendered one 650,000-point terrain mesh while updating small collision tiles. A stationary rut benchmark missed a driving failure. With the ROS bridge enabled and a 0.5 m/s Twist command for three simulated seconds, static sand tiles moved the rover 1.03 m, but the full rut runtime moved it only 0.0085 m. A visual-only full-mesh update yielded zero measured travel. At a 10 Hz OAK rate over four simulated seconds, RGB/depth delivery fell from 38 pairs with static tiles to 5–6 pairs with full-mesh updates. Updating only the small collision tiles preserved 0.92 m travel, 38 RGB/depth pairs, 81 scans, and a 2.8 cm rut. These measurements used the earlier, deeper soil coefficients; the later shallow defaults have not had the same drive benchmark. This isolated the regression to the large rendered-mesh write; the exact renderer or physics invalidation mechanism remains unprofiled.
 
 The repaired builder removes the original mesh faces but keeps its points as the undeformed reference. It renders the same 176 small tiles used for collision and updates only touched tiles. Isolated headless ROS results with a 0.5 m/s command for three simulated seconds were:
 
@@ -58,7 +58,7 @@ The repaired builder removes the original mesh faces but keeps its points as the
 | Maximum rut depth | 2.8–2.9 cm | 3.0 cm |
 | Mean headless frame time | 24.1–24.2 ms | 79.3 ms |
 
-A captured 640×400 RGB frame contained terrain imagery, and a runtime restart reconstructed the rutted height grid from tile geometry with zero measured height difference. These tests do not establish visual rut quality or controller feel in the GUI. The GUI remained open during the headless tests, and CPU/GPU travel differences include physics-setting and startup effects; they are not a soil calibration result.
+A captured 640×400 RGB frame contained terrain imagery, and the earlier persistence behavior reconstructed the rutted height grid from tile geometry with zero measured height difference. Reset now restores the original ground by default unless persistence is explicitly enabled. These historical tests do not establish visual rut quality or controller feel in the GUI. The GUI remained open during the headless tests, and CPU/GPU travel differences include physics-setting and startup effects; they are not a soil calibration result.
 
 ## Recommendations
 

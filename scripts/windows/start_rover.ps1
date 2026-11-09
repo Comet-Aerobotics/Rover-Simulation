@@ -80,6 +80,11 @@ if($usbExit -eq 0){
   }
   if($rowsToAttach.Count -eq 0){Write-Host 'No named USB controller found here; checking WSL and the configured remote USB host.'}
 } elseif($usbipdCommand){Write-Warning 'usbipd list failed; check USB attachment manually.'}
+$listJoysticks='for j in /dev/input/js[0-9]*; do [ -e "$j" ] || continue; n=${j##*js}; name=$(cat "/sys/class/input/js${n}/device/name" 2>/dev/null || printf "Unknown controller"); printf "%s\t%s\n" "$j" "$name"; done'
+$initialJoystickRows=@(Invoke-WslBash $listJoysticks)
+if($LASTEXITCODE -ne 0){throw 'Could not enumerate joystick devices in WSL before remote USB attachment.'}
+$initialJoystickCount=$initialJoystickRows.Count
+$remoteAttachSuccessCount=0
 $remoteUsbHost=$env:ROVER_REMOTE_USB_HOST
 $configuredRemoteUsbHost=$remoteUsbHost
 $tailscaleCommand=Get-Command 'tailscale.exe' -ErrorAction SilentlyContinue
@@ -139,10 +144,12 @@ if(-not [string]::IsNullOrWhiteSpace($remoteUsbHost)){
     $remoteRowsToAttach=@()
     $configuredRemoteBusIds=@($env:ROVER_REMOTE_USB_BUSIDS -split ',' | ForEach-Object {$_.Trim()} | Where-Object {$_})
     if($configuredRemoteBusIds.Count -gt 0){
-      $remoteRowsToAttach=@($remoteDeviceRows | Where-Object {
-        $rowBusId=[regex]::Match($_,'^\s*(\d+-\d+):').Groups[1].Value
-        $configuredRemoteBusIds -contains $rowBusId
-      })
+      foreach($configuredRemoteBusId in $configuredRemoteBusIds){
+        $matchingRemoteRow=@($remoteDeviceRows | Where-Object {
+          [regex]::Match($_,'^\s*(\d+-\d+):').Groups[1].Value -eq $configuredRemoteBusId
+        } | Select-Object -First 1)
+        if($matchingRemoteRow.Count -gt 0){$remoteRowsToAttach+= $matchingRemoteRow[0]}
+      }
       $exportedBusIds=@($remoteDeviceRows | ForEach-Object {[regex]::Match($_,'^\s*(\d+-\d+):').Groups[1].Value})
       $missingBusIds=@($configuredRemoteBusIds | Where-Object {$_ -notin $exportedBusIds})
       if($missingBusIds.Count -gt 0 -or $remoteRowsToAttach.Count -ne $configuredRemoteBusIds.Count){
@@ -174,7 +181,8 @@ if(-not [string]::IsNullOrWhiteSpace($remoteUsbHost)){
       if(-not $remoteBusId){continue}
       Write-Host "Attaching remote USB controller device $remoteBusId into WSL."
       Invoke-WslBash "usbip attach --remote='$remoteUsbHost' --busid='$remoteBusId'" -AsRoot
-      if($LASTEXITCODE -ne 0){Write-Warning "USB/IP attach for $remoteBusId returned an error; it may already be attached. Continuing to check WSL input devices."}
+      if($LASTEXITCODE -eq 0){$remoteAttachSuccessCount++}
+      else{Write-Warning "USB/IP attach for $remoteBusId failed. Check whether the device is already attached with 'usbip port' in WSL; continuing with input devices that did attach."}
     }
     if($remoteDeviceRows.Count -eq 0){Write-Warning 'No USB devices are shared by the remote computer. Bind the controller device(s) there with usbipd, then retry.'}
   }
@@ -182,7 +190,16 @@ if(-not [string]::IsNullOrWhiteSpace($remoteUsbHost)){
   if($Mode -eq 'Diagnostics'){Write-Host 'No preferred remote USB host is saved; Start mode will discover USB/IP devices on online Tailscale peers.'}
   else{Write-Host 'No remote USB/IP controller was discovered; only local or already-attached WSL controllers can be used.' -ForegroundColor Yellow}
 }
-$listJoysticks='for j in /dev/input/js[0-9]*; do [ -e "$j" ] || continue; n=${j##*js}; name=$(cat "/sys/class/input/js${n}/device/name" 2>/dev/null || printf "Unknown controller"); printf "%s\t%s\n" "$j" "$name"; done'
+if($remoteAttachSuccessCount -gt 0){
+  $expectedJoystickCount=$initialJoystickCount+$remoteAttachSuccessCount
+  for($attempt=0;$attempt -lt 10;$attempt++){
+    $settledJoystickRows=@(Invoke-WslBash $listJoysticks)
+    if($LASTEXITCODE -ne 0){throw 'Could not enumerate joystick devices in WSL after remote USB attachment.'}
+    if($settledJoystickRows.Count -ge $expectedJoystickCount){break}
+    Start-Sleep -Seconds 1
+  }
+  if($settledJoystickRows.Count -lt $expectedJoystickCount){Write-Warning "Only $($settledJoystickRows.Count - $initialJoystickCount) of $remoteAttachSuccessCount newly attached USB device(s) appeared as joystick nodes in WSL. Check Linux HID support for the missing device(s)."}
+}
 $wslJoystickRows=@(Invoke-WslBash $listJoysticks)
 if($LASTEXITCODE -ne 0){throw 'Could not enumerate joystick devices in WSL.'}
 Write-Host 'Controllers visible to WSL (including USB-over-IP devices):'
