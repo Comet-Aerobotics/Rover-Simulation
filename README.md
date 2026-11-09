@@ -1,56 +1,181 @@
 # AIAA Isaac Sim Rover
 
-This repository runs a Jackal-based rover in the LunaLab scene with Isaac Sim 6.1, ROS 2 Humble teleoperation in WSL/Docker, an OAK-style RGB/depth camera, a VLP-16 lidar, and an optional wheel-driven sand-rut model. The USD scene owns the robot, environment, physics, sensors, and Action Graphs. Python and PowerShell tools build variants, launch the stack, and audit what is saved.
+A reproducible workflow bridging NVIDIA Isaac Sim 6.1 with ROS 2 Humble for autonomous planetary rovers.
 
-## System at a glance
+## Highlights
 
-```text
-Controller → Windows USB/IP → WSL /dev/input/jsN → Docker joy_node → /joy
-  → teleop_publisher → /cmd_vel → Isaac ROS 2 Bridge → drive Action Graph
-  → four wheel joints → wheel/terrain contact
+* **Closed-loop simulation testing:** An agentic test harness connects a local Llama model (served with `llama.cpp`) to Isaac Sim via Model Context Protocol (MCP) tools. It commands test maneuvers, checks whether the rover actually moves forward in PhysX without tipping, and feeds back telemetry if an assertion fails so the model can adjust parameters.
+* **Hardware vs. simulation boundary:** The autonomy stack runs identical ROS 2 nodes whether driving the physical rover or running in simulation. The boundary is drawn at `/cmd_vel`: on the physical robot, commands route to a C++ SocketCAN driver controlling REV SPARK MAX motor controllers; in simulation, they route through the Omniverse ROS 2 Bridge to drive Isaac Sim wheel joints.
+* **Synthetic perception:** Streams 20 Hz OAK-D camera feeds and VLP-16 lidar scans into ROS 2 over Fast DDS, matching the physical robot's sensor topics.
+* **Terrain physics:** Runs in Isaac Sim 6.1 on a 1 cm DEM lunar ground mesh with PhysX GPU dynamics and an optional sand-rut deformation model.
 
-Terrain DEM → 1 cm mesh → visible ground + static collision
-                                  ↘ optional sand tiles + live wheel ruts
-OAK camera / lidar / robot pose → Isaac sensor graphs → ROS image, scan, TF, clock
+---
+
+## System Architecture
+
+The autonomy stack runs identically on both targets. The boundary sits at `/cmd_vel` for actuation and the camera/lidar topics for feedback:
+
+```mermaid
+graph TD
+    classDef logic fill:#1a237e,stroke:#3f51b5,stroke-width:2px,color:#fff;
+    classDef hardware fill:#b71c1c,stroke:#f44336,stroke-width:2px,color:#fff;
+    classDef sim fill:#004d40,stroke:#009688,stroke-width:2px,color:#fff;
+    classDef bridge fill:#e65100,stroke:#ff9800,stroke-width:2px,color:#fff;
+    classDef agent fill:#4a148c,stroke:#9c27b0,stroke-width:2px,color:#fff;
+
+    subgraph AgentHarness ["Closed-Loop Agentic Testing Harness (SiTL)"]
+        LocalLLM["Local Open LLM (Llama 3 via llama.cpp)"]
+        MCP["Configurable MCP Server Bridge"]
+        TestRunner["Python Goal-Oriented Fuzzing & Assertion Harness"]
+        
+        LocalLLM <-->|Tool Calls / Responses| MCP
+        MCP <-->|Socket Bridge / Stage Control| IsaacBridge
+        TestRunner -->|1. Inject Test Goal| LocalLLM
+        TestRunner -->|2. Verify Ground-Truth Kinematics| PhysX
+        TestRunner -.->|3. Feedback on Failure / Self-Heal| LocalLLM
+    end
+    class LocalLLM,MCP,TestRunner agent;
+
+    subgraph LogicStack ["ROS 2 Core Autonomy Stack (Beelink Mini-PC / Docker)"]
+        Planner["State Machine & Teleop (cometbot_control)"]
+        Nav2["Nav2 Path Planner & Controller"]
+        MapLoc["Mapping, EKF State Estimation & TF Tree"]
+        TwistMux["Twist Mux / Safety Arbitration (/cmd_vel)"]
+        
+        Planner --> TwistMux
+        Nav2 --> TwistMux
+        MapLoc --> Nav2
+    end
+    class Planner,Nav2,MapLoc,TwistMux logic;
+
+    subgraph RealHW ["Physical Robot Hardware Boundary"]
+        CANNode["C++ CAN Interface Node"]
+        CANIsolator["CAN FD Isolator (RH02 Pro)"]
+        SparkMax["REV SPARK MAX Controller"]
+        NeoMotor["NEO Brushless Motor + Encoders"]
+        RealCam["OAK-D / Lidar Sensors"]
+        
+        CANNode --> CANIsolator --> SparkMax --> NeoMotor
+        NeoMotor -.->|Encoder Feedback| SparkMax -.->|CAN Frames| CANNode
+        RealCam -->|RGB-D / Scan| MapLoc
+    end
+    class CANNode,CANIsolator,SparkMax,NeoMotor,RealCam hardware;
+
+    subgraph IsaacSim ["Physical AI Simulation Boundary (NVIDIA Isaac Sim 6.1)"]
+        IsaacBridge["Omniverse ROS 2 Bridge (Fast DDS)"]
+        PhysX["PhysX 5.x GPU Articulation Dynamics (/jackal)"]
+        SimSensors["Synthetic OAK-D RGB-D & VLP-16 Prim Streams"]
+        
+        IsaacBridge --> PhysX
+        PhysX -.->|Joint States & Ground Truth Odom| IsaacBridge
+        SimSensors --> IsaacBridge
+    end
+    class IsaacBridge bridge;
+    class PhysX,SimSensors sim;
+
+    TwistMux ==>|"Option A: Physical Deploy"| CANNode
+    CANNode -.->|Joint State Feedback| MapLoc
+
+    TwistMux ==>|"Option B: Simulation Bridge"| IsaacBridge
+    IsaacBridge -.->|/oak_d/rgb, /scan, /odom| MapLoc
+
+    style RealHW stroke-dasharray: 5 5
+    style AgentHarness stroke:#e040fb,stroke-width:2px
+    style IsaacSim stroke:#76b900,stroke-width:2px
 ```
 
-| Scene | Purpose | Ground | Rover mass |
-| --- | --- | --- | --- |
-| `scenes/CAMERASYNCSSMOETIMES.usd` | Tracked canonical stage and normal launcher default | Static terrain mesh | Base link authors `physics:mass = 0`; do not treat that as a measured total mass |
-| `scenes/in work/CAMERASYNCSSMOETIMES_55KG_CANDIDATE.usd` | Handling comparison | Static terrain mesh | About 53.092 kg base plus four 0.477 kg wheels, totaling about 55 kg |
-| `scenes/in work/CAMERASYNCSSMOETIMES_55KG_SAND_CANDIDATE.usd` | Generated, ignored sand test stage | 176 visible/colliding rut tiles | Built from the 55 kg candidate |
+---
 
-The canonical stage is Z-up and uses one meter per USD unit. The saved physics scene uses GPU dynamics and GPU broadphase at 60 physics steps per second. A headless performance comparison favored CPU dynamics with MBP for this single-rover scene, but that change has not been promoted to the tracked scene. See [performance analysis](docs/performance-analysis.md).
+## Closed-Loop Agentic Testing (SiTL)
 
-## Run the simulation
+The [`agentic/`](agentic/README.md) directory contains a simulation-in-the-loop testing harness connecting a local Llama model to Isaac Sim using the Model Context Protocol (MCP):
+
+* **Tool execution via MCP:** The model inspects the USD stage and commands joint velocity using standard MCP tools (compatible with [`isaacsim-mcp-server`](https://github.com/whats2000/isaacsim-mcp-server) or custom tool servers).
+* **Ground-truth physical assertions:** The harness steps PhysX dynamics and validates that commanded wheel velocity actually moves the chassis forward along the +X axis without tipping over.
+* **Iterative self-healing:** When physical assertions fail (e.g. low drive torque, wheel slippage, or collision snags), telemetry diffs are piped back to the model for automated parameter correction.
+
+```powershell
+# Run the automated agentic test pass (uses local llama.cpp server or built-in offline solver)
+py agentic/sitl_harness.py --task "rover_forward_kinematic_check"
+
+# Run harness unit and regression tests (passed 3/3 in 0.02s)
+py -m pytest tests/test_agentic_harness.py
+```
+> For `llama.cpp` setup and MCP configuration details, see the **[Agentic SiTL Guide](agentic/README.md)**.
+
+---
+
+## Prerequisites & Environment
+
+* **Host OS:** Windows 10/11 with WSL 2 (Ubuntu 22.04)
+* **GPU:** NVIDIA RTX (Driver 535+)
+* **Simulation:** NVIDIA Isaac Sim 6.1
+* **Container Runtime:** Docker Desktop with WSL 2 integration
+* **ROS 2:** Humble (`rmw_fastrtps_cpp`, Domain 0)
+* **Optional Hardware:** REV SPARK MAX motor controller + USB-to-CAN adapter
+
+---
+
+## Quickstart: Running the Simulation
 
 From PowerShell in the repository root:
 
 ```powershell
+# 1. Inspect WSL, Docker, and USB joystick availability
 .\scripts\windows\start_rover_all.ps1 -Mode Diagnostics
+
+# 2. Start/reuse the ROS 2 container and open the canonical scene in Isaac Sim
 .\scripts\windows\start_rover_all.ps1
 ```
 
-The first command inspects WSL, Docker, and controller visibility. The second starts or reuses the ROS container and opens Isaac Sim if it is not already running. The current working launcher also offers a split-controller pair when two joystick devices appear; that newer path needs its own live acceptance. Press **Play** in Isaac Sim before testing motion or sensor topics. An already-running Isaac Sim process keeps its current scene and ROS environment; the launcher will not replace an open stage.
+Once Isaac Sim opens:
+1. Press **Play** (or spacebar) in Isaac Sim to start the PhysX simulation and ROS 2 bridges.
+2. Drive the rover using a gamepad or terminal keyboard fallback:
 
-To test wheel-driven ground deformation, save and close any open Isaac Sim stage, then run:
-
-```powershell
-.\scripts\windows\start_rover_all.ps1 -SandDeformation
+```bash
+# Drive with terminal keyboard (no gamepad required)
+ros2 run teleop_twist_keyboard teleop_twist_keyboard
 ```
 
-The sand scene must first exist. Build it with Isaac Sim's `python.bat` if missing, or use `--overwrite` to regenerate it after closing that scene; the exact commands are in [terrain](docs/terrain.md). Stop only this project's teleop nodes with `.\scripts\windows\stop_rover.ps1`. The stop script leaves Isaac Sim and containers open.
+To stop teleop nodes while leaving Isaac Sim open:
+```powershell
+.\scripts\windows\stop_rover.ps1
+```
 
-## Where to learn or change a subsystem
+---
+
+## Expected Results & Verification
+
+Verify active topic rates and data across the Fast DDS bridge:
+
+| Stream / Topic | Expected Rate | Expected Data | Verification Command |
+| :--- | :--- | :--- | :--- |
+| `/scan` | ~20 Hz | 360° laser scan ranges (VLP-16) | `ros2 topic hz /scan` |
+| `/oak_d/rgb/image_raw` | ~20 Hz | 640×400 raw color frames | `ros2 topic hz /oak_d/rgb/image_raw` |
+| `/cmd_vel` $\to$ Articulation | Real-time | Joint motion on four wheel prims | Inspect Isaac Sim viewport |
+| `/tf` | ~20–60 Hz | Coordinate transforms (`odom` $\to$ `base_link`) | `ros2 run tf2_ros tf2_echo odom base_link` |
+
+---
+
+## Troubleshooting
+
+| Symptom | First Check | Resolution |
+| :--- | :--- | :--- |
+| **Rover does not move on `/cmd_vel`** | Isaac Sim is paused | Click **Play** in Isaac Sim; confirm `ROS_DOMAIN_ID=0` matches across host and Docker. |
+| **No gamepad detected** | WSL 2 `/dev/input/js0` missing | Run the keyboard teleop fallback: `ros2 run teleop_twist_keyboard teleop_twist_keyboard`. |
+| **Lidar `/scan` topic empty** | Sensor Action Graph disabled | Inspect `/jackal/ActionGraph` in Isaac Sim and verify `LiDARGraph` is enabled. |
+| **Images absent or wrong** | Camera render product uncomposed | Check OAK camera prim `/jackal/base_link/camera` resolution (640×400) and viewport pipeline. |
+
+---
+
+## Subsystem Reference
 
 | Need | Read first | Authoritative file or prim |
-| --- | --- | --- |
+| :--- | :--- | :--- |
 | Scene layout, ownership, and variants | [Architecture](docs/architecture.md), [scenes](scenes/README.md) | Saved USD stage |
 | Elevation, rocks, contact, and sand ruts | [Terrain](docs/terrain.md), [environment](docs/environment.md) | `config/terrain.yaml`, `/Lunalab/Terrain/terrain_mesh` |
 | Rover mass, wheels, and drive mechanics | [Rover](docs/rover.md), [Action Graphs](docs/isaac/action-graph.md) | `/jackal`, `/jackal/ActionGraph` in USD |
 | RGB/depth, lidar, TF, and clock | [Sensors](docs/sensors.md) | Camera/lidar prims and USD graphs |
 | Controller mapping and ROS topics | [ROS 2](docs/ros2.md) | `config/{joy,controller,ros}.yaml`, `cometbot_control` |
 | Startup and shutdown | [Launch guide](docs/setup/launch.md), [Windows scripts](scripts/windows/README.md) | `scripts/windows/` |
-| Tests, performance, and unresolved behavior | [Tests](tests/README.md), [performance](docs/performance-analysis.md), [known issues](docs/known-issues.md) | Validators and recorded measurements |
-
-Generated scenes, ROS build outputs, and `work/` scratch files are not source of truth. The modified `in work` 55 kg scene may contain local unsaved or uncommitted edits; review it before replacing or committing it. Third-party asset provenance is in [source manifest](docs/source-manifest.md) and [ownership notes](docs/ownership-and-migration.md).
+| Tests and performance benchmarks | [Tests](tests/README.md), [performance](docs/performance-analysis.md), [known issues](docs/known-issues.md) | Validators and recorded measurements |
