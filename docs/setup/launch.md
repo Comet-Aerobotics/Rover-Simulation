@@ -35,7 +35,7 @@ $isaacPython = 'C:\isaac-sim\_build\windows-x86_64\release\python.bat'
 .\scripts\windows\start_rover_all.ps1 -SandDeformation
 ```
 
-You only need the build step when the sand scene is missing or you want a reset. Do not overwrite a sand stage with ruts you intend to keep. During Play, look for `AIAA_SAND_READY` followed by `AIAA_SAND_RUT`. See [terrain](../terrain.md) for model variables and persistence.
+You only need the build step when the sand scene is missing or you want a fresh generated file. With the default `persist_deformation_on_reset: false`, pressing **Stop** restores touched sand tiles; **Pause** keeps them. Do not overwrite a sand stage with ruts you intentionally saved. During Play, look for `AIAA_SAND_READY` followed by `AIAA_SAND_RUT`; Stop prints `AIAA_SAND_RESET` after a rut. See [terrain](../terrain.md) for model variables and persistence.
 
 ## Stop and recover
 

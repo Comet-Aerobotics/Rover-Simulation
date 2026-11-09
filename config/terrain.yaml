@@ -23,16 +23,17 @@ terrain:
   deformation:
     tile_cells: 64
     update_interval_s: 0.20
+    persist_deformation_on_reset: false # Stop restores the scene's starting terrain; Pause keeps current ruts.
     wheel_radius_m: 0.098
     wheel_width_m: 0.080
     contact_length_m: 0.120
     reference_load_n: 135.0
-    reference_sinkage_m: 0.018
+    reference_sinkage_m: 0.006
     pressure_exponent: 1.1
-    maximum_sinkage_m: 0.060
-    compaction_time_s: 0.18
-    slip_sinkage_gain: 0.75
-    displaced_volume_fraction: 0.30
-    maximum_berm_m: 0.020
+    maximum_sinkage_m: 0.012
+    compaction_time_s: 0.30
+    slip_sinkage_gain: 0.30
+    displaced_volume_fraction: 0.15
+    maximum_berm_m: 0.003
     contact_tolerance_m: 0.025
     maximum_stamp_spacing_m: 0.025

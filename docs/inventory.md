@@ -27,7 +27,7 @@ The inspected 55 kg candidate had 70 render meshes and about 1.90 million triang
 | Canonical visual scene | Opened/rendered and structurally audited in Isaac Sim 6.1 | Powered handling in this exact scene is not established |
 | 55 kg candidate motion | User drove the rover with controller; isolated ROS Twist trials also moved it | Does not automatically certify canonical mass/handling |
 | ROS sensor delivery | Actual scan, RGB, depth, camera-info, and TF messages reached WSL in a prior running candidate | Image content, calibration, and sustained GUI rates need application-specific checks |
-| Sand repair | Headless CPU and GPU drives formed ~3 cm ruts while maintaining RGB/depth/scan cadence | GUI rut appearance, controller feel, and soil calibration remain open |
+| Sand repair | Headless CPU and GPU ROS drives formed ~3 cm ruts with previous coefficients while maintaining RGB/depth/scan cadence; a later direct-wheel headless drive with shallow defaults formed a 7.7 mm rut and reset to baseline on Stop | GUI appearance, controller feel, repeated ROS/sensor benchmark, and soil calibration remain open |
 | Lidar overlay | Saved asset has `drawLines` and `drawPoints` enabled | Needs visual confirmation after scene reload |
 | Performance | Controlled headless tests identified GPU physics/contact and camera rendering costs | Operator GUI FPS cannot be inferred directly from those numbers |
 
