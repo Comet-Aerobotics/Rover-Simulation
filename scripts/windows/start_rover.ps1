@@ -9,12 +9,17 @@ if(Test-Path (Join-Path $repo '.env')) {
 }
 $distro=if($env:WSL_DISTRO){$env:WSL_DISTRO}else{'Ubuntu'}
 $container=if($env:ROS_CONTAINER){$env:ROS_CONTAINER}else{'aiaa_rover_dev'}
+function Invoke-WslBash([string]$command){
+  # PowerShell 5.1 rewrites quotes inside native process arguments. Pass only
+  # base64 ASCII across that boundary and source the original script in Bash.
+  $payload=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($command))
+  & wsl.exe -d $distro --exec bash -lc "source <(printf %s $payload | base64 -d)"
+}
 function Start-WslWindow([string]$title,[string]$command){
   $payload=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($command))
   $child=@'
 $Host.UI.RawUI.WindowTitle='TITLE_VALUE'
-$scriptText=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('PAYLOAD_VALUE'))
-& wsl.exe -d 'DISTRO_VALUE' -- bash -lc $scriptText
+& wsl.exe -d 'DISTRO_VALUE' --exec bash -lc 'source <(printf %s PAYLOAD_VALUE | base64 -d)'
 if($LASTEXITCODE -ne 0){Write-Host "WSL command exited with code $LASTEXITCODE" -ForegroundColor Yellow}
 '@
   $child=$child.Replace('TITLE_VALUE',$title).Replace('PAYLOAD_VALUE',$payload).Replace('DISTRO_VALUE',$distro)
@@ -24,7 +29,7 @@ if($LASTEXITCODE -ne 0){Write-Host "WSL command exited with code $LASTEXITCODE" 
 Write-Host "Repository: $repo`nWSL distro: $distro`nROS container: $container`nMode: $Mode"
 & wsl.exe -d $distro --exec true 2>$null
 if($LASTEXITCODE -ne 0){throw "WSL distro '$distro' could not start."}
-$ctx=& wsl.exe -d $distro --exec bash -lc 'docker context show'
+$ctx=Invoke-WslBash 'docker context show'
 if($LASTEXITCODE -ne 0){throw "Docker CLI inside WSL distro '$distro' cannot reach its engine."}
 Write-Host "WSL Docker context: $ctx"
 $usbipdCommand=Get-Command 'usbipd.exe' -ErrorAction SilentlyContinue
@@ -57,20 +62,22 @@ if($usbExit -eq 0){
   } else{Write-Host 'No controller on this Windows computer; checking WSL for local or USB-over-IP controllers.'}
 } elseif($usbipdCommand){Write-Warning 'usbipd list failed; check USB attachment manually.'}
 $listJoysticks='for j in /dev/input/js[0-9]*; do [ -e "$j" ] || continue; n=${j##*js}; name=$(cat "/sys/class/input/js${n}/device/name" 2>/dev/null || printf "Unknown controller"); printf "%s\t%s\n" "$j" "$name"; done'
-$wslJoystickRows=@(& wsl.exe -d $distro --exec bash -lc $listJoysticks)
+$wslJoystickRows=@(Invoke-WslBash $listJoysticks)
 if($LASTEXITCODE -ne 0){throw 'Could not enumerate joystick devices in WSL.'}
 Write-Host 'Controllers visible to WSL (including USB-over-IP devices):'
 if($wslJoystickRows.Count -eq 0){Write-Host '  None detected.'}else{$wslJoystickRows | ForEach-Object {Write-Host "  $_"}}
-$dockerPs=& wsl.exe -d $distro --exec bash -lc 'docker ps --format "{{.Names}} {{.Status}}"'
+$dockerPs=Invoke-WslBash 'docker ps --format "{{.Names}} {{.Status}}"'
 if($LASTEXITCODE -ne 0){throw 'Could not list containers on the WSL Docker engine.'}
 Write-Host "WSL containers:`n$($dockerPs -join "`n")"
-$oldState=& wsl.exe -d $distro --exec bash -lc 'docker inspect -f "{{.State.Status}}" cometbot_dev 2>/dev/null'
+$oldState=Invoke-WslBash 'docker inspect -f "{{.State.Status}}" cometbot_dev 2>/dev/null'
 $oldExit=$LASTEXITCODE
-$targetState=& wsl.exe -d $distro --exec bash -lc "docker inspect -f '{{.State.Status}}' $container 2>/dev/null"
+$targetState=Invoke-WslBash "docker inspect -f '{{.State.Status}}' $container 2>/dev/null"
 $targetExit=$LASTEXITCODE
 if($targetExit -eq 0){
   Write-Host "Target container state: $targetState"
-  & wsl.exe -d $distro --exec bash -lc "docker exec $container bash -lc 'source /opt/ros/humble/setup.bash; if [ -f /workspace/install/setup.bash ]; then source /workspace/install/setup.bash; elif [ -f /root/CAN/cometbot_ws/install/setup.bash ]; then source /root/CAN/cometbot_ws/install/setup.bash; fi; printenv ROS_DISTRO ROS_DOMAIN_ID RMW_IMPLEMENTATION; ros2 node list 2>/dev/null; ros2 topic info /joy 2>/dev/null; ros2 topic info /cmd_vel 2>/dev/null'"
+  if($targetState -eq 'running'){
+    Invoke-WslBash "docker exec $container bash -lc 'source /opt/ros/humble/setup.bash; if [ -f /workspace/install/setup.bash ]; then source /workspace/install/setup.bash; elif [ -f /root/CAN/cometbot_ws/install/setup.bash ]; then source /root/CAN/cometbot_ws/install/setup.bash; fi; printenv ROS_DISTRO ROS_DOMAIN_ID RMW_IMPLEMENTATION; ros2 node list 2>/dev/null; ros2 topic info /joy 2>/dev/null; ros2 topic info /cmd_vel 2>/dev/null'"
+  }
 } else{Write-Host "Target container '$container' is not present on WSL Docker."}
 $legacyNodes=@()
 if($oldExit -eq 0 -and $oldState -eq 'running'){
@@ -84,7 +91,7 @@ if($oldExit -eq 0 -and $oldState -eq 'running'){
 if($Mode -eq 'Diagnostics'){return}
 for($attempt=0;$attempt -lt 10 -and $wslJoystickRows.Count -eq 0;$attempt++){
   Start-Sleep -Seconds 1
-  $wslJoystickRows=@(& wsl.exe -d $distro --exec bash -lc $listJoysticks)
+  $wslJoystickRows=@(Invoke-WslBash $listJoysticks)
 }
 if($wslJoystickRows.Count -eq 0){throw 'No controller is visible in WSL. Attach the local controller with usbipd or connect the remote USB-over-IP device into WSL, then retry.'}
 $joysticks=@($wslJoystickRows | ForEach-Object {
@@ -118,7 +125,7 @@ if($targetState -eq 'running'){
   if($LASTEXITCODE -ne 0){throw "Could not inspect processes in '$container'."}
   $hasJoy=@($nodeProcesses | Where-Object { $_ -match '(^|[ /])joy_node([ /]|$)' }).Count -gt 0
   $hasTeleop=@($nodeProcesses | Where-Object { $_ -match '(^|[ /])teleop_publisher([ /]|$)' }).Count -gt 0
-  & wsl.exe -d $distro --exec bash -lc $inputProbe 2>$null
+  Invoke-WslBash $inputProbe 2>$null
   $containerHasJoystick=$LASTEXITCODE -eq 0
   if(-not $containerHasJoystick -and ($hasJoy -or $hasTeleop)){
     throw "The running '$container' has active teleop nodes but cannot open the input devices. Stop this project's teleop nodes, then rerun Start to recreate the container with the attached controller."
@@ -128,10 +135,10 @@ if($targetState -ne 'running' -or -not $containerHasJoystick){
   $linuxRepo=(& wsl.exe -d $distro --exec wslpath -a $repo).Trim()
   if($LASTEXITCODE -ne 0){throw 'Could not map the repository path into WSL.'}
   $recreate=if($targetState -eq 'running'){' --force-recreate'}else{''}
-  & wsl.exe -d $distro --exec bash -lc "cd '$linuxRepo' && ROVER_JOYSTICK_DEVICE='$selectedDevice' docker compose -f docker/compose.yaml up -d --build$recreate"
+  Invoke-WslBash "cd '$linuxRepo' && ROVER_JOYSTICK_DEVICE='$selectedDevice' docker compose -f docker/compose.yaml up -d --build$recreate"
   if($LASTEXITCODE -ne 0){throw 'Compose build/start failed on the WSL Docker engine.'}
 }
-& wsl.exe -d $distro --exec bash -lc $inputProbe 2>$null
+Invoke-WslBash $inputProbe 2>$null
 $containerHasJoystick=$LASTEXITCODE -eq 0
 if(-not $containerHasJoystick){throw "WSL sees the controller at $selectedDevice, but container '$container' cannot open it. Check the Docker device mapping."}
 $nodeProcesses=@(& wsl.exe -d $distro --exec docker exec $container ps -eo args=)
@@ -144,7 +151,7 @@ if($hasJoy -and $hasTeleop){
   throw "Partial ROS teleoperation is already running in '$container'; resolve it before starting another launch."
 } else {
   $teleopCommand='source /opt/ros/humble/setup.bash && source /workspace/install/setup.bash && ros2 launch cometbot_control teleop.launch.py > /tmp/aiaa_rover_teleop.log 2>&1'
-  & wsl.exe -d $distro --exec docker exec -d -e "ROVER_JOY_DEVICE_ID=$selectedDeviceId" $container bash -lc $teleopCommand
+  Invoke-WslBash "docker exec -d -e ROVER_JOY_DEVICE_ID=$selectedDeviceId $container bash -lc '$teleopCommand'"
   if($LASTEXITCODE -ne 0){throw 'Could not start the ROS teleoperation launch in the rover container.'}
 }
 $monitor="docker exec -it $container bash -lc 'source /opt/ros/humble/setup.bash && source /workspace/install/setup.bash && ros2 topic echo /joy'"
@@ -155,7 +162,7 @@ Start-WslWindow 'ROVER - ROS container shell' "exec docker exec -it -w /workspac
 Write-Host 'Opening /joy controller input monitor.'
 Start-WslWindow 'ROVER - /joy monitor' $monitor
 $healthy=$false
-for($attempt=0;$attempt -lt 20;$attempt++){
+for($attempt=0;$attempt -lt 60;$attempt++){
   $nodeProcesses=@(& wsl.exe -d $distro --exec docker exec $container ps -eo args=)
   if($LASTEXITCODE -ne 0){throw "Could not inspect processes in '$container'."}
   $hasJoy=@($nodeProcesses | Where-Object { $_ -match '(^|[ /])joy_node([ /]|$)' }).Count -gt 0
@@ -163,7 +170,7 @@ for($attempt=0;$attempt -lt 20;$attempt++){
   if($hasJoy -and $hasTeleop){$healthy=$true;break}
   Start-Sleep -Seconds 1
 }
-if(-not $healthy){throw 'ROS launch did not expose both expected nodes within 20 seconds; inspect the opened terminals.'}
+if(-not $healthy){throw 'ROS launch did not expose both expected nodes within 60 seconds; inspect /tmp/aiaa_rover_teleop.log in the rover container.'}
 & wsl.exe -d $distro --exec docker exec $container bash -lc 'source /opt/ros/humble/setup.bash && source /workspace/install/setup.bash && ros2 topic info /joy && ros2 topic info /cmd_vel'
 $isaacLauncher=Join-Path $PSScriptRoot 'start_isaac_sim.ps1'
 $scene=if($env:ROVER_SCENE){$env:ROVER_SCENE}else{'scenes/CAMERASYNCSSMOETIMES.usd'}
