@@ -36,20 +36,18 @@ sequenceDiagram
 
 ## Setup Guide
 
-### 1. Set Up Local Llama with `llama.cpp`
-We use [`llama.cpp`](https://github.com/ggerganov/llama.cpp) to run GGUF quantized models locally with full NVIDIA CUDA GPU offloading (`-ngl 99`):
+### 1. Set Up Local Inference (`llama.cpp` or LM Studio)
+The harness works with any OpenAI-compliant local server:
 
-1. **Build or Download `llama.cpp`**:
-   Follow instructions at [llama.cpp releases](https://github.com/ggerganov/llama.cpp/releases) (ensure CUDA build for NVIDIA RTX acceleration).
-2. **Download Model Weights**:
-   Download a GGUF instruction-tuned model, e.g. `Meta-Llama-3-8B-Instruct.Q4_K_M.gguf` from Hugging Face.
-3. **Launch the OpenAI-Compatible HTTP Server**:
-   ```bash
-   llama-server -m models/Meta-Llama-3-8B-Instruct.Q4_K_M.gguf --port 8080 -ngl 99
-   ```
-   The local server will be live and serving at `http://127.0.0.1:8080/v1`.
+* **Option A: `llama.cpp` (CLI / Headless):**
+  ```bash
+  llama-server -m models/Meta-Llama-3-8B-Instruct.Q4_K_M.gguf --port 8080 -ngl 99
+  ```
+  Serves at `http://127.0.0.1:8080/v1`.
+* **Option B: LM Studio (GUI):**
+  Load your model (e.g. Qwen 2.5 / 3.x or Llama 3), configure the `mcp/isaac-sim` tool server, and start the local server on port `1234` or `8080`.
 
-*(Documentation reference: [llama.cpp HTTP server docs](https://github.com/ggerganov/llama.cpp/tree/master/examples/server))*
+*(Documentation reference: [llama.cpp HTTP server docs](https://github.com/ggerganov/llama.cpp/tree/master/examples/server) / [LM Studio](https://lmstudio.ai/))*
 
 ---
 

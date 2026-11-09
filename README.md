@@ -9,7 +9,7 @@ A reproducible workflow bridging NVIDIA Isaac Sim 6.1 with ROS 2 Humble for auto
 * **Synthetic perception:** Streams 20 Hz OAK-D camera feeds and VLP-16 lidar scans into ROS 2 over Fast DDS, matching the physical robot's sensor topics.
 * **Terrain physics:** Runs in Isaac Sim 6.1 on a 1 cm DEM lunar ground mesh with PhysX GPU dynamics and an optional sand-rut deformation model.
 * **Performance:** Sustained **60 FPS simulation** (PhysX 5 GPU dynamic broadphase at 60 Hz physics steps) and **30 FPS edge processing** on Beelink mini-PC / Jetson.
-* **Verified on:** NVIDIA RTX 4080 (Driver 550+), Isaac Sim 6.1, ROS 2 Humble (Fast DDS), Windows 11 with WSL 2 Ubuntu 22.04.
+* **Verified on:** NVIDIA RTX A4000 (16GB VRAM), Isaac Sim 6.1, ROS 2 Humble (Fast DDS), Windows 11 with WSL 2 Ubuntu 22.04.
 
 ---
 
@@ -98,7 +98,7 @@ The [`agentic/`](agentic/README.md) directory contains a simulation-in-the-loop 
 
 ```mermaid
 flowchart LR
-    Goal["1. Test Goal"] --> Model["2. Local Llama (llama.cpp)"]
+    Goal["1. Test Goal"] --> Model["2. Local Llama / Qwen (LM Studio / llama.cpp)"]
     Model -->|"3. MCP Tool Call"| Bridge["4. Isaac Sim MCP Bridge"]
     Bridge -->|"5. Joint Drive"| PhysX["6. PhysX 5 Dynamic Step"]
     PhysX -->|"7. Ground-Truth Telemetry"| Assertion{"8. Physical Assertion?"}
@@ -106,6 +106,9 @@ flowchart LR
     Assertion -->|"Fail"| Feedback["10. Telemetry Diff Feedback"]
     Feedback --> Model
 ```
+
+**Local Open Model Running MCP Tools Against Isaac Sim (NVIDIA RTX A4000):**
+![Local LLM MCP Inspection](docs/media/lm_studio_isaac_mcp.png)
 
 ```powershell
 # Run task passes: drive, onboarding stage audit, or camera sync
