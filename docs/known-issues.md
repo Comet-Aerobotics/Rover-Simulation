@@ -1,9 +1,21 @@
-﻿# Known issues and validation status
+# Known issues and validation status
 
 Updated 2026-11-08 for the source/scene documentation review. Runtime observations below come from the earlier named sessions; inspect the current Kit and ROS processes before treating them as live state.
 
 ## Confirmed and actionable
 
+- **OAK-D depth and CameraInfo stream desynchronization:** Downstream ROS 2 perception nodes (such as `PointCloudXyzNode` from `depth_image_proc`) report synchronization failure:
+  ```text
+  [WARN] [PointCloudXyzNode]: [image_transport] Topics '/oak_d/depth' and '/camera_info' do not appear to be synchronized. In the last 10s:
+      Image messages received: 0
+      CameraInfo messages received: 24
+      Synchronized pairs: 0
+  ```
+  This is caused by two compounding factors:
+  1. *Topic namespace mismatch:* In `/ActionGraph`, one camera info helper was authored with relative topic `oak_d/camera_info` while depth publishes to `/oak_d/depth`. Default ROS 2 `depth_image_proc` launch configurations listen for `/camera_info` at the root namespace unless explicitly remapped.
+  2. *Render product frame drops under GPU load:* While the tick-driven `ROS2CameraInfoHelper` continues publishing at ~2.4 Hz (24 messages per 10s), the GPU render product drops depth frames down to 0 under heavy PhysX/viewport load. Furthermore, if `image_transport` uses exact synchronization without shared simulation clock (`/clock`), minor timestamp drift causes all pairs to be rejected.
+  *Remediation:* Explicitly remap subscription topics (`-r image_rect:=/oak_d/depth -r camera_info:=/oak_d/camera_info`), enable approximate synchronization (`approx_sync:=true`), and run `py agentic/sitl_harness.py --task camera` to audit render product resolution and publishing state.
+- **Canonical stage unpromoted vehicle mass (mass = 0):** `/jackal/base_link` in `scenes/CAMERASYNCSSMOETIMES.usd` authors `physics:mass = 0`. The working 55 kg candidate scene (`CAMERASYNCSSMOETIMES_55KG_CANDIDATE.usd`) correctly authors ~53.09 kg base mass plus four 0.477 kg wheels, but this has not yet been promoted to canonical. PhysX infers mass from collision geometries when mass is 0, which leads to unpredictable terrain contact and suspension response. This is verified automatically via `py agentic/sitl_harness.py --task onboarding`.
 - **GPU physics is the main measured performance cost in the 55 kg scene.** The stage uses GPU dynamics and GPU broadphase for one rover against a 1.3-million-triangle terrain collider. In isolated Isaac Sim runs with the ROS bridge enabled, switching only to CPU dynamics and MBP reduced mean frame time from 81.3 ms to 30.4 ms. The user's GUI reports about 16 FPS; a CPU-physics scene candidate still needs controller and sensor acceptance there. See `docs/performance-analysis.md`.
 - **Lidar rays and points were hidden in the viewport.** `/jackal/base_link/laser/Lidar` is present and enabled, but the shared Jackal USD had `drawLines = false` and `drawPoints = false`. Both are now `true` in `assets/robots/jackal/ros2_jackal_PhysX_vlp16.usd`. The canonical and 55 kg candidate scenes inherit the corrected values. Reload the open stage after saving any unrelated unsaved edits to see the change; the current in-memory stage was not modified. This display setting is separate from `/scan` publication, which passed below.
 - **The old stop script could stop teleop in another container.** `cometbot_dev` uses the host PID namespace, so its former `docker exec ... pkill` commands also matched processes in `aiaa_rover_dev`. `scripts/windows/stop_rover.ps1` now selects PIDs from `docker top` for the named container before signaling them. The intended Joy and teleop nodes were restarted and the legacy control nodes were stopped; both containers remain running.
