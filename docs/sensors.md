@@ -15,7 +15,7 @@ Sensors are prims in the saved USD. Action Graph nodes create render products or
 | Clipping range | 0.05–1000 m | Geometry outside the range does not render into this camera |
 | Authored lens values | Focal length about 23.9075; horizontal aperture 19.2; vertical aperture 12.0 | USD camera parameters, not a physical calibration certificate |
 
-The stage also contains two infrared camera prims under `camera_link`, a `third_person` camera, three fixed `/World/Cameras/*` views, and a second 640 × 480 render product aimed at the OAK RGB camera. Their presence does not mean they publish the current RGB/depth topics. The active 640 × 400 graph is the path to inspect first. A legacy camera-info helper is disabled. Neither the precise physical mount nor camera-info calibration has been checked against hardware.
+The stage also contains two infrared camera prims under `camera_link`, a `third_person` camera, three fixed `/World/Cameras/*` views, and a second 640 × 480 render product aimed at the OAK RGB camera. Their presence does not mean they publish the current RGB/depth topics. The active 640 × 400 graph is the path to inspect first. Its OAK camera sensor is configured for 10 Hz. A legacy camera-info helper is disabled. Neither the precise physical mount nor camera-info calibration has been checked against hardware.
 
 The OAK prim has no authored `omni:sensor:tickRate` in the inspected stage. A headless 10 Hz tick-rate trial improved frame time while still delivering RGB/depth, but the required application rate is not established and that setting was not saved. See [performance analysis](performance-analysis.md).
 

@@ -192,13 +192,13 @@ For a guided walkthrough, explore the **[Onboarding Lessons](lessons/README.md)*
 
 ### Quick Exercises
 1. **Drive Parameter Assertion:** Open `agentic/tasks/wheel_motion.py`, change `min_displacement_expected` from `0.15` to `2.0`, and run `py agentic/sitl_harness.py --task drive`. Observe how the test fails on iteration 1 and how the harness returns the displacement deficit to the model for self-healing.
-2. **Camera Desync Resolution:** Run `py agentic/sitl_harness.py --task camera` to audit the `/ActionGraph` render product resolution (640×400) and ensure both depth and camera_info helpers are sharing the active tick and render product.
+2. **Camera Desync Resolution:** In a ROS-sourced Humble shell, run `ros2 launch cometbot_control pointcloud.launch.py`, then `python3 scripts/linux/check_camera_sync.py` from the repository root to measure live depth and CameraInfo pairing. The agentic harness uses mock camera state by default and cannot verify this stream.
 
 ### Knowledge Check
 * *Why must the terrain collider use `physics:approximation = "none"` instead of a convex hull?*  
   *(Answer: A convex hull wraps outer vertices, bridging craters and causing the rover to float above depressions. Triangle mesh contact allows wheels to track exact terrain contours.)*
 * *What causes `[PointCloudXyzNode] Topics '/oak_d/depth' and '/camera_info' do not appear to be synchronized`?*  
-  *(Answer: Topic namespace mismatch—subscribing to `/camera_info` instead of `/oak_d/camera_info`—or timestamp jitter between render product frames and camera info helpers.)*
+  *(Answer: The node must subscribe to `/oak_d/camera_info`; the warning also appears when CameraInfo continues but depth images stall. Inspect message counts and exact header pairs before attributing it to timestamp drift.)*
 
 ---
 
