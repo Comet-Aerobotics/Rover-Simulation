@@ -64,11 +64,13 @@ ros2 topic hz /oak_d/rgb/image_raw
      ros2 topic list | grep camera_info
      ```
   2. Notice that the Action Graph publishes to `/oak_d/camera_info` and `/oak_d/rgb/camera_info`, while the downstream node was listening for `/camera_info`.
-* **Fix**: Remap the subscription topic:
+* **Fix**: Launch the configured point-cloud node, or remap both subscriptions explicitly:
   ```bash
-  ros2 run depth_image_proc point_cloud_xyz_node --ros-args -r image_rect:=/oak_d/depth -r camera_info:=/oak_d/camera_info
+  ros2 launch cometbot_control pointcloud.launch.py
+  # Equivalent direct command:
+  ros2 run depth_image_proc point_cloud_xyz_node --ros-args -r image_rect:=/oak_d/depth -r /camera_info:=/oak_d/camera_info
   ```
-* **Verify**: Run `py agentic/sitl_harness.py --task camera` to verify the automated camera sync assertion.
+* **Verify**: Run `python3 scripts/linux/check_camera_sync.py` from the repository root in a ROS-sourced Humble shell. It measures real depth and CameraInfo messages and exact header-stamp pairs. The agentic harness defaults to mock data and is not a live camera test.
 
 ---
 

@@ -101,7 +101,7 @@ def validate(scene: Path, *, local_jackal: bool = False) -> list[str]:
     value(rgb,"inputs:topicName","/oak_d/rgb/image_raw"); value(rgb,"inputs:type","rgb")
     value(rgb,"inputs:frameId","oak_d_optical_frame")
     info=node(cam+"/ros2_camera_info_helper","isaacsim.ros2.bridge.ROS2CameraInfoHelper")
-    value(info,"inputs:topicName","oak_d/camera_info")
+    value(info,"inputs:topicName","/oak_d/camera_info")
     value(info,"inputs:frameId","oak_d_optical_frame")
     rgb_info=node(cam+"/RGBInfoHelper","isaacsim.ros2.bridge.ROS2CameraInfoHelper")
     value(rgb_info,"inputs:topicName","/oak_d/rgb/camera_info")
@@ -113,7 +113,17 @@ def validate(scene: Path, *, local_jackal: bool = False) -> list[str]:
             enabled = helper.GetAttribute("inputs:enabled")
             if enabled and enabled.HasAuthoredValueOpinion() and enabled.Get() is False:
                 issues.append(f"{helper.GetPath()} is disabled")
-    print(f"Scene: {scene}\nRover graph: /cmd_vel to differential controller to 2 articulation controllers\nCamera graph: 640x400, /oak_d/depth, /oak_d/rgb/image_raw, oak_d/camera_info")
+    if camera:
+        schemas = camera.GetMetadata("apiSchemas")
+        for schema in ("OmniSensorAPI", "OmniLensDistortionOpenCvPinholeAPI"):
+            if schemas is None or schema not in schemas.GetAppliedItems():
+                issues.append(f"{camera_path} is missing {schema}")
+        value(camera, "omni:sensor:tickRate", 10.0)
+        value(camera, "omni:lensdistortion:model", "opencvPinhole")
+        value(camera, "omni:lensdistortion:opencvPinhole:imageSize", Gf.Vec2i(640, 400))
+        for coefficient in ("s1", "s2", "s3", "s4"):
+            value(camera, f"omni:lensdistortion:opencvPinhole:{coefficient}", 0.0)
+    print(f"Scene: {scene}\nRover graph: /cmd_vel to differential controller to 2 articulation controllers\nCamera graph: 640x400 at 10 Hz, /oak_d/depth, /oak_d/rgb/image_raw, /oak_d/camera_info")
     return issues
 
 

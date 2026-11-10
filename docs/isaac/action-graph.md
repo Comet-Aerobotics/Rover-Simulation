@@ -29,7 +29,7 @@ The intended graph sends four wheel tokens: `front_left_wheel`, `front_right_whe
 
 ## Camera and lidar graph checks
 
-The OAK camera prim is `/jackal/base_link/DM9098Pro_enclosure/OAK_D_Pro_RGB`. `/ActionGraph/CreateRP` targets 640 × 400. Depth helper `CamHelper` publishes `/oak_d/depth`; `RGBHelper` publishes `/oak_d/rgb/image_raw`; `RGBInfoHelper` publishes `/oak_d/rgb/camera_info`. The separate camera-info helper uses `oak_d/camera_info` without a leading slash in its authored input. A legacy `CamHelperInfo` is disabled. The publisher frame ID is `oak_d_optical_frame`. Confirm the resolved topic names and image content in ROS rather than relying on node labels.
+The OAK camera prim is `/jackal/base_link/DM9098Pro_enclosure/OAK_D_Pro_RGB`. `/ActionGraph/CreateRP` targets 640 × 400. The camera has `OmniSensorAPI` and a 10 Hz sensor tick rate. Its OpenCV pinhole model supplies the 640 × 400 image size and all required coefficients; missing fields cause Isaac Sim 6.1's CameraInfo helper to fail. Depth helper `CamHelper` publishes `/oak_d/depth`; `RGBHelper` publishes `/oak_d/rgb/image_raw`; `RGBInfoHelper` publishes `/oak_d/rgb/camera_info`. The depth camera-info helper publishes `/oak_d/camera_info`. A legacy `CamHelperInfo` is disabled. The publisher frame ID is `oak_d_optical_frame`. Confirm the resolved topic names, image content, and header timestamps in ROS rather than relying on node labels.
 
 The lidar graph reads `/jackal/base_link/laser/Lidar` beams and publishes a LaserScan. The lidar asset's `drawLines` and `drawPoints` settings control the viewport overlay and do not gate ROS scan publication. The TF graph can publish the sensor frames even when PoseTree logs warnings; verify actual `/tf` messages and frame connectivity.
 

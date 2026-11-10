@@ -49,6 +49,24 @@ class CameraGraphTests(unittest.TestCase):
             "inputs:renderProductPath",
         )
 
+    def test_detects_relative_depth_camera_info_topic(self):
+        self.check_mutation(
+            lambda stage: stage.GetPrimAtPath("/ActionGraph/ros2_camera_info_helper").GetAttribute("inputs:topicName").Set("oak_d/camera_info"),
+            "inputs:topicName",
+        )
+
+    def test_detects_missing_camera_tick_rate(self):
+        self.check_mutation(
+            lambda stage: stage.GetPrimAtPath(CAMERA).GetAttribute("omni:sensor:tickRate").Set(0.0),
+            "omni:sensor:tickRate",
+        )
+
+    def test_detects_incomplete_pinhole_calibration(self):
+        self.check_mutation(
+            lambda stage: stage.GetPrimAtPath(CAMERA).GetAttribute("omni:lensdistortion:opencvPinhole:imageSize").Set(Gf.Vec2i(0, 0)),
+            "omni:lensdistortion:opencvPinhole:imageSize",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
