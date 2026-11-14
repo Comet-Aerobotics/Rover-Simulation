@@ -4,7 +4,8 @@ from pathlib import Path
 from pxr import Gf, Usd, UsdGeom
 
 
-def validate(scene: Path, *, local_jackal: bool = False) -> list[str]:
+def validate(scene: Path, *, local_jackal: bool = False,
+             drive_only: bool = False) -> list[str]:
     stage = Usd.Stage.Open(str(scene))
     if not stage:
         return [f"Unable to open USD stage: {scene}"]
@@ -33,6 +34,12 @@ def validate(scene: Path, *, local_jackal: bool = False) -> list[str]:
             issues.append(f"{prim.GetPath()} {attr_name}: expected connection {expected}, got {actual}")
 
     g = "/jackal/ActionGraph"
+    main_drive = stage.GetPrimAtPath(g)
+    if not main_drive.IsValid() or not main_drive.IsActive():
+        issues.append("Scene /jackal/ActionGraph is missing or inactive")
+    legacy_drive = stage.GetPrimAtPath("/jackal/ROS2_Graph/DriveGraph")
+    if legacy_drive.IsValid() and legacy_drive.IsActive():
+        issues.append("Imported /jackal/ROS2_Graph/DriveGraph is active alongside the scene controller")
     sub = node(g+"/ros2_subscribe_twist", "isaacsim.ros2.bridge.ROS2SubscribeTwist")
     value(sub, "inputs:topicName", "/cmd_vel")
     scale = node(g+"/scale_to_from_stage_units", "isaacsim.core.nodes.OgnIsaacScaleToFromStageUnit")
@@ -66,7 +73,13 @@ def validate(scene: Path, *, local_jackal: bool = False) -> list[str]:
         connection(ctrl,"inputs:jointNames",g+"/make_array"+suffix+".outputs:array")
         connection(ctrl,"inputs:velocityCommand",g+"/differential_controller.outputs:velocityCommand")
 
-    cam="/ActionGraph"
+    if drive_only:
+        print(f"Scene: {scene}\nRover graph: /cmd_vel to differential controller to 2 articulation controllers")
+        return issues
+
+    cam = "/ActionGraph"
+    if not stage.GetPrimAtPath(cam).IsValid() and stage.GetPrimAtPath("/CameraActionGraph").IsValid():
+        cam = "/CameraActionGraph"
     tick=node(cam+"/OnTick", "omni.graph.action.OnTick")
     value(tick,"inputs:onlyPlayback",True)
     rp=node(cam+"/CreateRP","isaacsim.core.nodes.IsaacCreateRenderProduct")
@@ -132,7 +145,9 @@ if __name__ == "__main__":
     parser.add_argument("scene",nargs="?",type=Path,default=Path("scenes/CAMERASYNCSSMOETIMES.usd"))
     parser.add_argument("--local-jackal",action="store_true",
         help="Validate the local OmniLRS Jackal candidate's wheel-joint names and prims")
+    parser.add_argument("--drive-only",action="store_true",
+        help="Validate the single scene drive graph without requiring the OAK camera graph")
     args=parser.parse_args()
-    errors=validate(args.scene,local_jackal=args.local_jackal)
+    errors=validate(args.scene,local_jackal=args.local_jackal,drive_only=args.drive_only)
     for error in errors: print("ERROR:",error)
     raise SystemExit(bool(errors))

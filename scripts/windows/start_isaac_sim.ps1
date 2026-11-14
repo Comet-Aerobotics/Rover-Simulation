@@ -3,6 +3,9 @@ param(
     [string]$IsaacRoot,
     [string]$Scene,
     [switch]$SandDeformation,
+    [switch]$CpuPhysics,
+    [switch]$GpuPhysics,
+    [switch]$NoOak,
     [ValidateSet('jazzy', 'humble')]
     [string]$RosDistro = 'humble'
 )
@@ -17,6 +20,15 @@ if (Test-Path -LiteralPath $envFile) {
             [Environment]::SetEnvironmentVariable($matches[1], $matches[2].Trim(), 'Process')
         }
     }
+}
+if ($CpuPhysics -and $GpuPhysics) {
+    throw 'Choose either -CpuPhysics or -GpuPhysics, not both.'
+}
+if ($env:ROVER_CPU_PHYSICS -and $env:ROVER_CPU_PHYSICS -notin @('0', '1')) {
+    throw 'ROVER_CPU_PHYSICS must be 1 (CPU) or 0 (GPU).'
+}
+$cpuPhysicsEnabled = if ($GpuPhysics) { $false } elseif ($CpuPhysics) { $true } else {
+    $env:ROVER_CPU_PHYSICS -ne '0'
 }
 
 if (-not $IsaacRoot) {
@@ -57,9 +69,12 @@ if ($existing) {
     $requestedDomain = if ($env:ROS_DOMAIN_ID) { $env:ROS_DOMAIN_ID } else { '0' }
     Write-Host 'Isaac Sim/Kit is already running; leaving the open stage untouched.' -ForegroundColor Yellow
     $existing | Select-Object Name, ProcessId | Format-Table -AutoSize
-    Write-Warning "The running Isaac Sim process keeps its original ROS environment. Restart it to apply ROS $RosDistro / Fast DDS / domain $requestedDomain."
+    Write-Warning "The running Isaac Sim process keeps its original ROS environment and physics mode. Restart it to apply ROS $RosDistro / Fast DDS / domain $requestedDomain and the selected physics mode."
     if ($SandDeformation -or $env:ROVER_SAND_DEFORMATION -eq '1') {
         Write-Warning 'Sand deformation cannot attach to an already running Isaac Sim process. Save any open scene changes, close Isaac Sim, and relaunch with -SandDeformation.'
+    }
+    if ($NoOak -or $env:ROVER_OAK_ENABLED -eq '0') {
+        Write-Warning 'The OAK camera mode cannot be changed in an already running Isaac Sim process. Save and relaunch to apply -NoOak.'
     }
     return
 }
@@ -101,10 +116,32 @@ if (-not (Test-Path -LiteralPath $openSceneScript)) {
 $env:AIAA_ROVER_SCENE = $Scene
 $sandEnabled = $SandDeformation -or $env:ROVER_SAND_DEFORMATION -eq '1'
 $env:AIAA_ROVER_SAND_DEFORMATION = if ($sandEnabled) { '1' } else { '0' }
+$env:AIAA_ROVER_CPU_PHYSICS = if ($cpuPhysicsEnabled) { '1' } else { '0' }
+$oakTickRate = if ($env:ROVER_OAK_TICK_RATE_HZ) { $env:ROVER_OAK_TICK_RATE_HZ } else { '10' }
+$parsedOakTickRate = 0.0
+if (-not [double]::TryParse($oakTickRate, [Globalization.NumberStyles]::Float,
+        [Globalization.CultureInfo]::InvariantCulture, [ref]$parsedOakTickRate) -or
+        [double]::IsNaN($parsedOakTickRate) -or
+        [double]::IsInfinity($parsedOakTickRate) -or $parsedOakTickRate -lt 0) {
+    throw 'ROVER_OAK_TICK_RATE_HZ must be a nonnegative number (0 keeps the saved camera cadence).'
+}
+$env:AIAA_ROVER_OAK_TICK_RATE_HZ = $oakTickRate
+$oakEnabled = -not ($NoOak -or $env:ROVER_OAK_ENABLED -eq '0')
+$env:AIAA_ROVER_OAK_ENABLED = if ($oakEnabled) { '1' } else { '0' }
 Write-Host "Launching Isaac Sim with ROS $RosDistro / Fast DDS / domain $env:ROS_DOMAIN_ID" -ForegroundColor Cyan
 Write-Host "Opening scene: $Scene"
 if ($sandEnabled) {
     Write-Host 'Wheel-driven sand deformation enabled.' -ForegroundColor Cyan
+}
+if ($cpuPhysicsEnabled) {
+    Write-Host 'CPU physics with MBP broadphase enabled for this launch.' -ForegroundColor Cyan
+} else {
+    Write-Host 'GPU physics with GPU broadphase enabled for this launch.' -ForegroundColor Cyan
+}
+if (-not $oakEnabled) {
+    Write-Host 'OAK RGB/depth render pipeline disabled for fast teleop.' -ForegroundColor Cyan
+} elseif ($parsedOakTickRate -gt 0) {
+    Write-Host "OAK camera tick rate: $oakTickRate Hz." -ForegroundColor Cyan
 }
 try {
     # Kit's --exec file parser splits paths at spaces even when quoted. The
@@ -113,4 +150,7 @@ try {
 } finally {
     Remove-Item Env:AIAA_ROVER_SCENE -ErrorAction SilentlyContinue
     Remove-Item Env:AIAA_ROVER_SAND_DEFORMATION -ErrorAction SilentlyContinue
+    Remove-Item Env:AIAA_ROVER_CPU_PHYSICS -ErrorAction SilentlyContinue
+    Remove-Item Env:AIAA_ROVER_OAK_TICK_RATE_HZ -ErrorAction SilentlyContinue
+    Remove-Item Env:AIAA_ROVER_OAK_ENABLED -ErrorAction SilentlyContinue
 }

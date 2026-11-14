@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from isaac.terrain.sand_runtime import SandRuntime
-from terrain.deformation import RutField, SoilParameters, WheelSample
+from terrain.deformation import DirtyRegion, RutField, SoilParameters, WheelSample
 from terrain.generate import apply_wheel_trace
 
 
@@ -88,6 +88,8 @@ def test_timeline_pause_keeps_ruts_and_stop_obeys_persistence(persist):
     runtime.points = np.zeros((11, 11, 3), dtype=np.float32)
     runtime.points[5, 5, 2] = -0.005
     runtime.modified_tiles = {"tile"}
+    runtime.pending_tiles = set()
+    runtime.protected_tiles = set()
     runtime.persist_on_reset = persist
     runtime._has_played = True
     runtime._stop_requested = False
@@ -120,6 +122,8 @@ def test_stop_event_resets_ruts_even_if_play_resumes_before_next_update():
     runtime.field.height[5, 5] = -0.005
     runtime.points = np.zeros((11, 11, 3), dtype=np.float32)
     runtime.modified_tiles = {"tile"}
+    runtime.pending_tiles = set()
+    runtime.protected_tiles = set()
     runtime.persist_on_reset = False
     runtime._has_played = True
     runtime._stop_requested = False
@@ -135,3 +139,36 @@ def test_stop_event_resets_ruts_even_if_play_resumes_before_next_update():
     runtime._update(None)
     assert runtime.field.height[5, 5] == 0.0
     assert len(writes) == 1
+
+
+def test_cpu_rut_sync_defers_collision_rebuild_under_wheel():
+    runtime = SandRuntime.__new__(SandRuntime)
+    runtime.field = RutField(np.zeros((11, 11), dtype=np.float32), 0.01)
+    runtime.field.height[2, 2] = -0.005
+    runtime.points = np.zeros((11, 11, 3), dtype=np.float32)
+    runtime.tile_info = {
+        "wheel_tile": (0, 5, 0, 5, None, None),
+        "clear_tile": (6, 10, 6, 10, None, None),
+    }
+    runtime.defer_contact_rebuild = True
+    runtime.protected_tiles = {"wheel_tile"}
+    runtime.pending_tiles = set()
+    runtime.modified_tiles = set()
+    visual_writes = []
+    collision_writes = []
+    runtime._sync_visual_tile = visual_writes.append
+    runtime._sync_tiles = lambda **kwargs: collision_writes.append(kwargs)
+
+    runtime._sync(DirtyRegion(0, 10, 0, 10))
+    assert visual_writes == ["wheel_tile"]
+    assert collision_writes == [{"paths": {"clear_tile"}}]
+    assert runtime.pending_tiles == {"wheel_tile"}
+    assert runtime.modified_tiles == {"wheel_tile"}
+    assert runtime.points[2, 2, 2] == -0.005
+
+    runtime._flush_pending()
+    assert len(collision_writes) == 1
+    runtime.protected_tiles.clear()
+    runtime._flush_pending()
+    assert collision_writes[-1] == {"paths": {"wheel_tile"}}
+    assert not runtime.pending_tiles

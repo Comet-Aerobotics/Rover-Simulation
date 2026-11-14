@@ -17,7 +17,7 @@ The selected robot is a local Jackal USD asset composed under `/jackal`. Its bod
 | Wheel links | `/jackal/{front,rear}_{left,right}_wheel_link` | Wheel pose and collision; sand runtime samples these links |
 | Wheel joint tokens passed to controller | `front_left_wheel`, `front_right_wheel`, `rear_left_wheel`, `rear_right_wheel` | These match the four composed revolute joints under `/jackal/base_link/` |
 | Active intended drive graph | `/jackal/ActionGraph` | Subscribes to `/cmd_vel`; radius 0.098 m, wheel separation 0.3755 m |
-| Additional saved drive graph | `/jackal/ROS2_Graph/DriveGraph` | Also active and subscribes to Twist; has radius 0.09 m and distance 0.335 m, so duplicate control needs a focused acceptance check |
+| Imported standalone drive graph | `/jackal/ROS2_Graph/DriveGraph` | Kept active in the reusable Jackal asset, but inactive in composed rover scenes; it does not compete with the scene controller |
 | Wheel collision | Four cylinder colliders | Contact geometry is distinct from wheel render meshes |
 
 The intended drive graph's numerical acceleration and speed limits are stage-authored values that have not been calibrated as SI limits. Do not retune them just because they appear large; the user has observed controller-driven motion in the 55 kg candidate. [Action Graphs](isaac/action-graph.md) lists the duplicate graph and audit procedure.
@@ -32,15 +32,15 @@ The intended drive graph's numerical acceleration and speed limits are stage-aut
 
 `config/simulation.yaml` records the 55 kg estimate, wheel radius, separation, and expected joint names as project intent. It does not automatically patch the canonical USD. `isaac/diagnostics/set_rover_mass.py` is a scene-editing helper; read its target and save behavior before use. The tracked canonical stage remains separate from the working candidate.
 
-The stage is Z-up, 1 m per USD unit. The saved `/physicsScene` uses GPU dynamics and GPU broadphase with 60 physics steps per second. A headless comparison found CPU dynamics with MBP substantially faster for this scene while retaining powered motion; neither setting has a complete GUI handling comparison. See [performance analysis](performance-analysis.md).
+The stage is Z-up, 1 m per USD unit. The saved `/physicsScene` now uses CPU dynamics and MBP broadphase with 60 physics steps per second. A headless comparison found CPU dynamics substantially faster for this small rover scene while retaining powered motion. Use `-GpuPhysics` for a comparison launch; GUI handling and soil calibration still need acceptance. See [performance analysis](performance-analysis.md).
 
 ## Checks to make after a change
 
 | Test | Observe | If it fails, inspect |
 | --- | --- | --- |
-| Joint mapping | Four wheel DOFs present and commanded | Graph joint tokens, articulation target, referenced asset variant |
+| Joint mapping | Four wheel DOFs present and commanded by one graph | Graph joint tokens, articulation target, referenced asset variant |
 | At rest | Wheels settle on visible terrain without persistent bounce or sinking | Body mass, wheel collision, terrain collider, overlapping obstacles |
-| Straight command | Base moves forward and wheels rotate in the expected direction | `/cmd_vel`, duplicate drive graphs, wheel ordering, radius |
+| Straight command | Base moves forward and wheels rotate in the expected direction | `/cmd_vel`, imported graph activation, wheel ordering, radius |
 | Turn command | Rover yaws in the commanded direction | Left/right order, angular axis mapping, wheel separation |
 | Sand traversal | Ruts form beneath contacted wheels and rover responds to them | Sand runtime readiness, tile collision, wheel pose/ground query |
 | Stop input | Motion command returns to zero after stale Joy input | Teleop's 0.5 s freshness timeout and ROS topic flow |

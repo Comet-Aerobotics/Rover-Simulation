@@ -36,7 +36,7 @@ class SandRuntime:
         import omni.physx
         import omni.timeline
         import omni.usd
-        from pxr import Usd, UsdGeom, UsdPhysics
+        from pxr import Usd, UsdGeom, UsdPhysics, Vt
 
         self.stage = stage
         self.timeline = omni.timeline.get_timeline_interface()
@@ -65,6 +65,7 @@ class SandRuntime:
         })
         self.field = RutField(self.points[:, :, 2], float(self.cfg["resolution_m"]), params)
         self.tile_info = {}
+        self.tile_xy_bounds = {}
         saved_rut_tiles = set()
         for prim in self.tile_root.GetChildren():
             row0 = int(prim.GetCustomDataByKey("sand:row0"))
@@ -84,6 +85,10 @@ class SandRuntime:
                 tile.GetFaceVertexCountsAttr().Get(),
                 tile.GetFaceVertexIndicesAttr().Get(),
             )
+            self.tile_xy_bounds[path] = (
+                float(saved_points[:, :, 0].min()), float(saved_points[:, :, 0].max()),
+                float(saved_points[:, :, 1].min()), float(saved_points[:, :, 1].max()),
+            )
         self.points[:, :, 2] = self.field.height
         self.inverse = UsdGeom.Xformable(self.mesh.GetPrim()).ComputeLocalToWorldTransform(
             Usd.TimeCode.Default()).GetInverse()
@@ -95,6 +100,21 @@ class SandRuntime:
         gravity_attr = physics_scene.GetAttribute("physics:gravityMagnitude") if physics_scene else None
         gravity = float(gravity_attr.Get()) if gravity_attr and gravity_attr.Get() else 9.81
         self.load_per_wheel_n = self.mass_kg * gravity / 4.0
+        gpu_dynamics = physics_scene.GetAttribute("physxScene:enableGPUDynamics") if physics_scene else None
+        self.defer_contact_rebuild = gpu_dynamics is not None and gpu_dynamics.Get() is False
+        self.protected_tiles = set()
+        self.pending_tiles = set()
+        if self.defer_contact_rebuild:
+            # Runtime point writes do not update the extent every frame. Give
+            # each tile enough bounds for the full configured rut and berm.
+            for path in self.tile_info:
+                tile = UsdGeom.Mesh(stage.GetPrimAtPath(path))
+                extent = _numpy(tile.GetExtentAttr().Get()).astype(np.float32).copy()
+                row0, row1, col0, col1, _, _ = self.tile_info[path]
+                baseline = self.field.baseline[row0:row1 + 1, col0:col1 + 1]
+                extent[0, 2] = float(baseline.min()) - float(self.soil_cfg["maximum_sinkage_m"])
+                extent[1, 2] = float(baseline.max()) + float(self.soil_cfg["maximum_berm_m"])
+                tile.GetExtentAttr().Set(Vt.Vec3fArray.FromNumpy(extent))
         self.scene_query = omni.physx.get_physx_scene_query_interface()
         self.articulation = None
         self.wheel_prims = None
@@ -113,7 +133,8 @@ class SandRuntime:
         self._timeline_subscription = self.timeline.get_timeline_event_stream().create_subscription_to_pop_by_type(
             omni.timeline.TimelineEventType.STOP, self._on_timeline_stop)
         print(f"AIAA_SAND_READY tiles={len(self.tile_info)} mass={self.mass_kg:.2f}kg ",
-              f"load_per_wheel={self.load_per_wheel_n:.1f}N persist_on_reset={self.persist_on_reset}", flush=True)
+              f"load_per_wheel={self.load_per_wheel_n:.1f}N persist_on_reset={self.persist_on_reset} ",
+              f"defer_contact_rebuild={self.defer_contact_rebuild}", flush=True)
 
     def stop(self):
         self._subscription = None
@@ -126,12 +147,16 @@ class SandRuntime:
     def _finish_stop(self):
         if not self.persist_on_reset:
             self._reset_deformation()
+        elif self.pending_tiles:
+            self._sync_tiles(paths=set(self.pending_tiles))
+            self.pending_tiles.clear()
         self.articulation = None
         self.wheel_prims = None
         self.dof_indices = None
         self._has_played = False
         self.last_time = None
         self.previous_positions.clear()
+        self.protected_tiles.clear()
 
     def _initialize_wheels(self):
         from isaacsim.core.experimental.prims import Articulation, RigidPrim
@@ -202,9 +227,17 @@ class SandRuntime:
         heading = self._heading(_numpy(orientations)[0])
         spins = _numpy(self.articulation.get_dof_velocities(dof_indices=self.dof_indices))[0]
         dirty = None
+        self.protected_tiles.clear()
         for i, name in enumerate(WHEELS):
             world_positions, _ = self.wheel_prims[name].get_world_poses()
             local = self._local(_numpy(world_positions)[0])
+            if self.defer_contact_rebuild:
+                clearance = (self.field.parameters.wheel_radius_m +
+                             self.field.parameters.contact_tolerance_m)
+                for path, (xmin, xmax, ymin, ymax) in self.tile_xy_bounds.items():
+                    if (xmin - clearance <= local[0] <= xmax + clearance and
+                            ymin - clearance <= local[1] <= ymax + clearance):
+                        self.protected_tiles.add(path)
             previous = self.previous_positions.get(name)
             self.previous_positions[name] = (float(local[0]), float(local[1]))
             if previous is None:
@@ -236,10 +269,45 @@ class SandRuntime:
                 dirty = region if dirty is None else dirty.merge(region)
         if dirty is not None:
             self._sync(dirty)
+        if self.defer_contact_rebuild:
+            self._flush_pending()
 
     def _sync(self, dirty: DirtyRegion):
         self.points[:, :, 2] = self.field.height
-        self._sync_tiles(dirty)
+        if not self.defer_contact_rebuild:
+            self._sync_tiles(dirty)
+            return
+        ready = set()
+        for path, (row0, row1, col0, col1, _, _) in self.tile_info.items():
+            if (row1 < dirty.row_min or row0 > dirty.row_max or
+                    col1 < dirty.col_min or col0 > dirty.col_max):
+                continue
+            if path in self.protected_tiles:
+                # Replacing a CPU PhysX collider while a wheel touches it
+                # reduced steering in the powered spin trial. Point writes
+                # update the visible rut without recooking contact geometry.
+                self._sync_visual_tile(path)
+                self.pending_tiles.add(path)
+                self.modified_tiles.add(path)
+            else:
+                ready.add(path)
+        if ready:
+            self._sync_tiles(paths=ready)
+            self.pending_tiles.difference_update(ready)
+
+    def _sync_visual_tile(self, path: str):
+        from pxr import UsdGeom, Vt
+
+        row0, row1, col0, col1, _, _ = self.tile_info[path]
+        points = np.ascontiguousarray(self.points[row0:row1 + 1, col0:col1 + 1].reshape(-1, 3))
+        tile = UsdGeom.Mesh(self.stage.GetPrimAtPath(path))
+        tile.GetPointsAttr().Set(Vt.Vec3fArray.FromNumpy(points))
+
+    def _flush_pending(self):
+        ready = self.pending_tiles - self.protected_tiles
+        if ready:
+            self._sync_tiles(paths=ready)
+            self.pending_tiles.difference_update(ready)
 
     def _reset_deformation(self):
         if not self.modified_tiles:
@@ -249,6 +317,7 @@ class SandRuntime:
         self.points[:, :, 2] = self.field.height
         self._sync_tiles(paths=paths, record_rut=False)
         self.modified_tiles.clear()
+        self.pending_tiles.clear()
         print(f"AIAA_SAND_RESET reason=timeline_stop tiles={len(paths)}", flush=True)
 
     def _sync_tiles(self, dirty: DirtyRegion | None = None, *,

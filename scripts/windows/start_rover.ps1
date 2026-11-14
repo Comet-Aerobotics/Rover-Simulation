@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([ValidateSet('Diagnostics','Start')][string]$Mode='Diagnostics',[switch]$SandDeformation)
+param([ValidateSet('Diagnostics','Start')][string]$Mode='Diagnostics',[switch]$SandDeformation,[switch]$CpuPhysics,[switch]$GpuPhysics,[switch]$NoOak)
 $ErrorActionPreference='Stop'
 $repo=(Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 if(Test-Path (Join-Path $repo '.env')) {
@@ -323,9 +323,9 @@ if(-not $healthy){throw 'ROS launch did not expose both expected nodes within 60
 $isaacLauncher=Join-Path $PSScriptRoot 'start_isaac_sim.ps1'
 $scene=if($env:ROVER_SCENE){$env:ROVER_SCENE}else{'scenes/CAMERASYNCSSMOETIMES.usd'}
 if ($SandDeformation -or $env:ROVER_SAND_DEFORMATION -eq '1') {
-  & $isaacLauncher -RosDistro 'humble' -SandDeformation
+  & $isaacLauncher -RosDistro 'humble' -SandDeformation -CpuPhysics:$CpuPhysics -GpuPhysics:$GpuPhysics -NoOak:$NoOak
 } else {
-  & $isaacLauncher -Scene $scene -RosDistro 'humble'
+  & $isaacLauncher -Scene $scene -RosDistro 'humble' -CpuPhysics:$CpuPhysics -GpuPhysics:$GpuPhysics -NoOak:$NoOak
 }
 Write-Host 'Startup commands issued. Confirm ROS Bridge and end-to-end command delivery in Isaac Sim.'
 Write-Host 'Open the configured scene and press Play; the rover Action Graph is driven by simulation playback.'

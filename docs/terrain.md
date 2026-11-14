@@ -73,6 +73,8 @@ The builder copies the 55 kg candidate and keeps the output beside it so relativ
 
 The current model is empirical. It uses wheel position, heading, angular speed, travel speed, nearest ground hit, an estimated normal load, and elapsed simulation time. It rejects wheels over rocks or above the sand contact tolerance. It depresses a wheel-shaped footprint and adds a bounded side berm. It does not simulate individual grains, suspension load transfer, or independently measured soil shear/rolling resistance. The normal-load estimate is rover weight divided by four wheels.
 
+With the default CPU physics mode, the runtime updates the visible mesh under each wheel but waits to rebuild that tile's collision mesh until all wheels have moved clear of it. This preserves turning during CPU simulation; removing and recreating a contacted collider every 0.2 seconds had reduced a three-second spin test from roughly 47° to 11°. A wheel therefore feels a new rut when it later re-enters that tile, rather than immediately while making it. The optional `-GpuPhysics` mode still rebuilds contacted tiles at the normal interval. Stop restores both visible and collision geometry by default.
+
 | `config/terrain.yaml` key under `deformation` | Current value | Effect / reason to change |
 | --- | ---: | --- |
 | `tile_cells` | 64 | Cells per tile edge; smaller tiles reduce per-rebuild geometry but increase tile count |
